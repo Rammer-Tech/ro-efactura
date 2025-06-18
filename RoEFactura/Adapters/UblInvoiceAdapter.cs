@@ -1,54 +1,54 @@
 using System.Linq;
-using RoEFactura.Domain;
+using RoEFactura.Entities;
 using UblSharp;
 using UblSharp.CommonAggregateComponents;
 using UblSharp.UnqualifiedDataTypes;
 
-namespace RoEFactura.AntiCorruption;
+namespace RoEFactura.Adapters;
 
-public static class CreditNoteAdapter
+public static class UblInvoiceAdapter
 {
-    public static CreditNoteType ToUbl(CreditNote creditNote)
+    public static InvoiceType ToUbl(Invoice invoice)
     {
-        var ubl = new CreditNoteType
+        var ubl = new InvoiceType
         {
-            ID = new IdentifierType { Value = creditNote.Id },
-            IssueDate = new DateType { Value = creditNote.IssueDate },
-            DocumentCurrencyCode = new CodeType { Value = creditNote.Currency },
-            AccountingSupplierParty = new SupplierPartyType { Party = ToUblParty(creditNote.Supplier) },
-            AccountingCustomerParty = new CustomerPartyType { Party = ToUblParty(creditNote.Customer) },
+            ID = new IdentifierType { Value = invoice.Id },
+            IssueDate = new DateType { Value = invoice.IssueDate },
+            DocumentCurrencyCode = new CodeType { Value = invoice.Currency },
+            AccountingSupplierParty = new SupplierPartyType { Party = ToUblParty(invoice.Supplier) },
+            AccountingCustomerParty = new CustomerPartyType { Party = ToUblParty(invoice.Customer) },
             LegalMonetaryTotal = new MonetaryTotalType
             {
-                PayableAmount = new AmountType { Value = creditNote.Total, currencyID = creditNote.Currency }
+                PayableAmount = new AmountType { Value = invoice.Total, currencyID = invoice.Currency }
             }
         };
 
-        foreach (var line in creditNote.Lines)
+        foreach (var line in invoice.Lines)
         {
-            var lineType = new CreditNoteLineType
+            var lineType = new InvoiceLineType
             {
                 ID = new IdentifierType { Value = line.LineNumber.ToString() },
-                CreditedQuantity = new QuantityType { Value = line.Quantity },
-                LineExtensionAmount = new AmountType { Value = line.LineTotal, currencyID = creditNote.Currency },
+                InvoicedQuantity = new QuantityType { Value = line.Quantity },
+                LineExtensionAmount = new AmountType { Value = line.LineTotal, currencyID = invoice.Currency },
                 Item = new ItemType
                 {
                     Description = [ new TextType { Value = line.Description } ]
                 },
                 Price = new PriceType
                 {
-                    PriceAmount = new AmountType { Value = line.UnitPrice, currencyID = creditNote.Currency }
+                    PriceAmount = new AmountType { Value = line.UnitPrice, currencyID = invoice.Currency }
                 }
             };
 
-            ubl.CreditNoteLine.Add(lineType);
+            ubl.InvoiceLine.Add(lineType);
         }
 
         return ubl;
     }
 
-    public static CreditNote FromUbl(CreditNoteType ubl)
+    public static Invoice FromUbl(InvoiceType ubl)
     {
-        var cn = new CreditNote
+        var invoice = new Invoice
         {
             Id = ubl.ID?.Value ?? string.Empty,
             IssueDate = ubl.IssueDate ?? DateTime.MinValue,
@@ -57,21 +57,21 @@ public static class CreditNoteAdapter
             Customer = FromUblParty(ubl.AccountingCustomerParty?.Party)
         };
 
-        if (ubl.CreditNoteLine != null)
+        if (ubl.InvoiceLine != null)
         {
-            foreach (var line in ubl.CreditNoteLine)
+            foreach (var line in ubl.InvoiceLine)
             {
-                cn.Lines.Add(new InvoiceLine
+                invoice.Lines.Add(new InvoiceLine
                 {
                     LineNumber = int.TryParse(line.ID?.Value, out var n) ? n : 0,
                     Description = line.Item?.Description?.FirstOrDefault()?.Value ?? string.Empty,
-                    Quantity = line.CreditedQuantity?.Value ?? 0m,
+                    Quantity = line.InvoicedQuantity?.Value ?? 0m,
                     UnitPrice = line.Price?.PriceAmount?.Value ?? 0m
                 });
             }
         }
 
-        return cn;
+        return invoice;
     }
 
     private static PartyType ToUblParty(Party party)

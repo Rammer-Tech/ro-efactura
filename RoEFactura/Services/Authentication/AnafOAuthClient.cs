@@ -3,13 +3,13 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Configuration;
 
-namespace RoEFactura;
+namespace RoEFactura.Services.Authentication;
 
-public class AnafOAuthService
+public class AnafOAuthClient
 {
     private readonly IConfiguration _configuration;
 
-    public AnafOAuthService(IConfiguration configuration)
+    public AnafOAuthClient(IConfiguration configuration)
     {
         _configuration = configuration;
     }

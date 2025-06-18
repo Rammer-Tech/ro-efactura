@@ -2,14 +2,14 @@
 using Microsoft.Extensions.Configuration;
 using Newtonsoft.Json;
 
-namespace RoEFactura;
+namespace RoEFactura.Services.Authentication;
 
-public class EInvoiceHttpService
+public class OAuthHttpClient
 {
     private readonly IConfiguration _configuration;
     private readonly HttpClient _httpClient;
 
-    public EInvoiceHttpService(IConfiguration configuration, HttpClient httpClient)
+    public OAuthHttpClient(IConfiguration configuration, HttpClient httpClient)
     {
         _configuration = configuration;
         _httpClient = httpClient;
