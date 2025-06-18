@@ -1,4 +1,6 @@
-﻿using System.IO.Compression;
+﻿using System.IO;
+using System.IO.Compression;
+using System.Net.Http;
 using System.Net.Http.Headers;
 using Ardalis.GuardClauses;
 using Microsoft.Extensions.Hosting;
@@ -13,6 +15,8 @@ public class AnafEInvoiceClient
     private readonly string _pagedEndpoint;
     private readonly string _nonPagedEndpoint;
     private readonly string _downloadEndpoint;
+    private readonly string _validateEndpoint;
+    private readonly string _uploadEndpoint;
 
     public AnafEInvoiceClient(HttpClient httpClient, IHostEnvironment env)
     {
@@ -23,6 +27,8 @@ public class AnafEInvoiceClient
             _pagedEndpoint = "https://api.anaf.ro/prod/FCTEL/rest/listaMesajePaginatieFactura";
             _nonPagedEndpoint = "https://api.anaf.ro/prod/FCTEL/rest/listaMesajeFactura";
             _downloadEndpoint = "https://api.anaf.ro/prod/FCTEL/rest/descarcare";
+            _validateEndpoint = "https://api.anaf.ro/prod/efactura/validare";
+            _uploadEndpoint = "https://api.anaf.ro/prod/efactura/upload";
         }
         // else
         // {
@@ -32,11 +38,14 @@ public class AnafEInvoiceClient
         // }
     }
 
-    public AnafEInvoiceClient(string pagedEndpoint, string nonPagedEndpoint, string downloadEndpoint)
+    public AnafEInvoiceClient(string pagedEndpoint, string nonPagedEndpoint, string downloadEndpoint,
+        string validateEndpoint, string uploadEndpoint)
     {
         _pagedEndpoint = pagedEndpoint;
         _nonPagedEndpoint = nonPagedEndpoint;
         _downloadEndpoint = downloadEndpoint;
+        _validateEndpoint = validateEndpoint;
+        _uploadEndpoint = uploadEndpoint;
     }
 
     public async Task<List<EInvoiceAnafResponse>> ListEInvoicesAsync(string token, int days, string cui,
@@ -198,5 +207,59 @@ public class AnafEInvoiceClient
             Console.WriteLine(e);
             throw;
         }
+    }
+
+    public async Task<string> ValidateXmlAsync(string token, string xmlFilePath)
+    {
+        token = Guard.Against.NullOrWhiteSpace(token);
+        xmlFilePath = Guard.Against.NullOrWhiteSpace(xmlFilePath);
+
+        if (!File.Exists(xmlFilePath))
+        {
+            throw new FileNotFoundException("File not found", xmlFilePath);
+        }
+
+        using MultipartFormDataContent form = new MultipartFormDataContent();
+        using FileStream fileStream = File.OpenRead(xmlFilePath);
+        StreamContent fileContent = new StreamContent(fileStream);
+        fileContent.Headers.ContentType = new MediaTypeHeaderValue("application/xml");
+        form.Add(fileContent, "file", Path.GetFileName(xmlFilePath));
+
+        HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Post, _validateEndpoint)
+        {
+            Headers = { { "Authorization", $"Bearer {token}" } },
+            Content = form
+        };
+
+        HttpResponseMessage response = await _httpClient.SendAsync(request);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadAsStringAsync();
+    }
+
+    public async Task<string> UploadXmlAsync(string token, string xmlFilePath)
+    {
+        token = Guard.Against.NullOrWhiteSpace(token);
+        xmlFilePath = Guard.Against.NullOrWhiteSpace(xmlFilePath);
+
+        if (!File.Exists(xmlFilePath))
+        {
+            throw new FileNotFoundException("File not found", xmlFilePath);
+        }
+
+        using MultipartFormDataContent form = new MultipartFormDataContent();
+        using FileStream fileStream = File.OpenRead(xmlFilePath);
+        StreamContent fileContent = new StreamContent(fileStream);
+        fileContent.Headers.ContentType = new MediaTypeHeaderValue("application/xml");
+        form.Add(fileContent, "file", Path.GetFileName(xmlFilePath));
+
+        HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Post, _uploadEndpoint)
+        {
+            Headers = { { "Authorization", $"Bearer {token}" } },
+            Content = form
+        };
+
+        HttpResponseMessage response = await _httpClient.SendAsync(request);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadAsStringAsync();
     }
 }
