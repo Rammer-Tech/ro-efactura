@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 
-namespace RoEFactura.Domain;
+namespace RoEFactura.Entities;
 
 public class Invoice
 {

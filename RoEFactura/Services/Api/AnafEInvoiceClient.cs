@@ -5,16 +5,16 @@ using Microsoft.Extensions.Hosting;
 using Newtonsoft.Json;
 using RoEFactura.Dtos;
 
-namespace RoEFactura;
+namespace RoEFactura.Services.Api;
 
-public class AnafEInvoiceDownloadService
+public class AnafEInvoiceClient
 {
     private readonly HttpClient _httpClient;
     private readonly string _pagedEndpoint;
     private readonly string _nonPagedEndpoint;
     private readonly string _downloadEndpoint;
 
-    public AnafEInvoiceDownloadService(HttpClient httpClient, IHostEnvironment env)
+    public AnafEInvoiceClient(HttpClient httpClient, IHostEnvironment env)
     {
         _httpClient = httpClient;
 
@@ -32,7 +32,7 @@ public class AnafEInvoiceDownloadService
         // }
     }
 
-    public AnafEInvoiceDownloadService(string pagedEndpoint, string nonPagedEndpoint, string downloadEndpoint)
+    public AnafEInvoiceClient(string pagedEndpoint, string nonPagedEndpoint, string downloadEndpoint)
     {
         _pagedEndpoint = pagedEndpoint;
         _nonPagedEndpoint = nonPagedEndpoint;

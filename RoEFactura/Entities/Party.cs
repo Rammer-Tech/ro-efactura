@@ -1,4 +1,4 @@
-namespace RoEFactura.Domain;
+namespace RoEFactura.Entities;
 
 public class Party
 {

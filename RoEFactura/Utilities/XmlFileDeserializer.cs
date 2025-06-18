@@ -1,8 +1,8 @@
 ﻿using System.Xml.Serialization;
 
-namespace RoEFactura;
+namespace RoEFactura.Utilities;
 
-public class XmlDeserializer
+public class XmlFileDeserializer
 {
     public T DeserializeXmlFromFile<T>(string filePath)
     {
