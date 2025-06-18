@@ -10,7 +10,6 @@
     <PackageReference Include="Ardalis.GuardClauses" Version="5.0.0" />
     <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="9.0.6" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
-    <PackageReference Include="UblSharp" Version="1.1.1" />
   </ItemGroup>
 
 </Project>
