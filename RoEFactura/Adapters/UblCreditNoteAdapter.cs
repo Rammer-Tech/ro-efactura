@@ -1,4 +1,5 @@
 using System.Linq;
+using System.Collections.Generic;
 using RoEFactura.Entities;
 using UblSharp;
 using UblSharp.CommonAggregateComponents;
@@ -32,7 +33,10 @@ public static class UblCreditNoteAdapter
                 LineExtensionAmount = new AmountType { Value = line.LineTotal, currencyID = creditNote.Currency },
                 Item = new ItemType
                 {
-                    Description = [ new TextType { Value = line.Description } ]
+                    Description = new List<TextType>
+                    {
+                        new TextType { Value = line.Description }
+                    }
                 },
                 Price = new PriceType
                 {
@@ -78,8 +82,11 @@ public static class UblCreditNoteAdapter
     {
         return new PartyType
         {
-            PartyName = new PartyNameType { Name = new NameType { Value = party.Name } },
-            PartyTaxScheme = new[]
+            PartyName = new List<PartyNameType>
+            {
+                new PartyNameType { Name = new NameType { Value = party.Name } }
+            },
+            PartyTaxScheme = new List<PartyTaxSchemeType>
             {
                 new PartyTaxSchemeType { CompanyID = new IdentifierType { Value = party.VatId } }
             },
@@ -102,7 +109,7 @@ public static class UblCreditNoteAdapter
 
         return new Party
         {
-            Name = party.PartyName?.Name?.Value ?? string.Empty,
+            Name = party.PartyName?.FirstOrDefault()?.Name?.Value ?? string.Empty,
             VatId = party.PartyTaxScheme?.FirstOrDefault()?.CompanyID?.Value ?? string.Empty,
             Address = new Address
             {
