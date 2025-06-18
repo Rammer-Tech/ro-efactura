@@ -1,0 +1,50 @@
+# Visual Studio
+.vs/
+# Build results
+[Bb]in/
+[Oo]bj/
+
+# User-specific files
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Rider
+.idea/
+*.sln.iml
+
+# DotNet CLI
+**/bin/
+**/obj/
+
+# VS Code
+.vscode/
+
+# NuGet
+*.nupkg
+# The packages folder can be ignored because of Package Restore
+**/packages/*
+# except build/, which is used as an MSBuild target.
+!**/packages/build/
+# Uncomment if necessary however generally it is safe to ignore
+#!**/packages/repositories.config
+
+# MonoDevelop
+*.pidb
+*.userprefs
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Static analysis
+reports/
+
+# Others
+_ReSharper*/
+*.[Rr]e[Ss]harper
+
