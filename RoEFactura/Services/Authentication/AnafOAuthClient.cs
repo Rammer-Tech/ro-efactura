@@ -1,19 +1,10 @@
 ﻿using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
-using System.Text.Json.Serialization;
-using Microsoft.Extensions.Configuration;
 
 namespace RoEFactura.Services.Authentication;
 
 public class AnafOAuthClient
 {
-    private readonly IConfiguration _configuration;
-
-    public AnafOAuthClient(IConfiguration configuration)
-    {
-        _configuration = configuration;
-    }
-
     public async Task<Token> GetAccessTokenAsync(string clientId, string clientSecret, string callbackUrl)
     {
         using HttpClient client = CreateClientWithCertificate();
@@ -136,13 +127,4 @@ public class AnafOAuthClient
 
         // If no certificates were found or selected, handle this case appropriately:
     }
-}
-
-public class Token
-{
-    [JsonPropertyName("access_token")] public string AccessToken { get; set; }
-    [JsonPropertyName("expires_in")] public int ExpiresIn { get; set; }
-    [JsonPropertyName("token_type")] public string TokenType { get; set; }
-    [JsonPropertyName("scope")] public string Scope { get; set; }
-    [JsonPropertyName("refresh_token")] public string RefreshToken { get; set; }
 }
