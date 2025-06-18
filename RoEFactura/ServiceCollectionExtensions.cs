@@ -3,7 +3,7 @@ using RoEFactura.Services.Api;
 using RoEFactura.Services.Authentication;
 using RoEFactura.Utilities;
 
-namespace Microsoft.Extensions.DependencyInjection;
+namespace RoEFactura;
 
 public static class ServiceCollectionExtensions
 {
@@ -11,7 +11,6 @@ public static class ServiceCollectionExtensions
     {
         // Register HTTP clients for API access
         services.AddHttpClient<AnafEInvoiceClient>();
-        services.AddHttpClient<OAuthHttpClient>();
 
         // Register other services
         services.AddTransient<AnafOAuthClient>();
