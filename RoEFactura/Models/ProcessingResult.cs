@@ -1,38 +1,37 @@
 using FluentValidation.Results;
-using RoEFactura.Domain.Entities;
 
 namespace RoEFactura.Models;
 
-public class ProcessingResult
+public class ProcessingResult<T>
 {
     public bool IsSuccess { get; private set; }
-    public Invoice? Invoice { get; private set; }
+    public T? Data { get; private set; }
     public List<ValidationFailure> Errors { get; private set; } = new();
     public List<string> Warnings { get; private set; } = new();
 
     private ProcessingResult() { }
 
-    public static ProcessingResult Success(Invoice invoice)
+    public static ProcessingResult<T> Success(T data)
     {
-        return new ProcessingResult
+        return new ProcessingResult<T>
         {
             IsSuccess = true,
-            Invoice = invoice
+            Data = data
         };
     }
 
-    public static ProcessingResult Failed(IEnumerable<ValidationFailure> errors)
+    public static ProcessingResult<T> Failed(IEnumerable<ValidationFailure> errors)
     {
-        return new ProcessingResult
+        return new ProcessingResult<T>
         {
             IsSuccess = false,
             Errors = errors.ToList()
         };
     }
 
-    public static ProcessingResult Failed(string errorMessage)
+    public static ProcessingResult<T> Failed(string errorMessage)
     {
-        return new ProcessingResult
+        return new ProcessingResult<T>
         {
             IsSuccess = false,
             Errors = new List<ValidationFailure>
@@ -42,7 +41,7 @@ public class ProcessingResult
         };
     }
 
-    public ProcessingResult WithWarnings(IEnumerable<string> warnings)
+    public ProcessingResult<T> WithWarnings(IEnumerable<string> warnings)
     {
         Warnings.AddRange(warnings);
         return this;

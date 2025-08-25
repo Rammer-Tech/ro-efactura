@@ -1,6 +1,7 @@
 using FluentValidation;
 using UblSharp;
 
+
 namespace RoEFactura.Validation;
 
 public class TotalsValidator : AbstractValidator<InvoiceType>
@@ -126,8 +127,8 @@ public class TotalsValidator : AbstractValidator<InvoiceType>
         if (period?.StartDate?.Value == null || period?.EndDate?.Value == null)
             return true;
 
-        if (!DateTime.TryParse(period.StartDate.Value, out var startDate) ||
-            !DateTime.TryParse(period.EndDate.Value, out var endDate))
+        if (!DateTime.TryParse(period.StartDate.Value.ToString(), out var startDate) ||
+            !DateTime.TryParse(period.EndDate.Value.ToString(), out var endDate))
             return true;
 
         return endDate >= startDate;

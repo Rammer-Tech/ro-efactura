@@ -1,10 +1,6 @@
-using AutoMapper;
 using FluentValidation;
 using Microsoft.Extensions.Logging;
-using RoEFactura.Domain.Entities;
-using RoEFactura.Extensions;
 using RoEFactura.Models;
-using RoEFactura.Repositories;
 using UblSharp;
 
 namespace RoEFactura.Services.Processing;
@@ -12,26 +8,20 @@ namespace RoEFactura.Services.Processing;
 public class UblProcessingService
 {
     private readonly IValidator<InvoiceType> _ublValidator;
-    private readonly IMapper _mapper;
-    private readonly IInvoiceRepository _invoiceRepository;
     private readonly ILogger<UblProcessingService> _logger;
 
     public UblProcessingService(
         IValidator<InvoiceType> ublValidator,
-        IMapper mapper,
-        IInvoiceRepository invoiceRepository,
         ILogger<UblProcessingService> logger)
     {
         _ublValidator = ublValidator;
-        _mapper = mapper;
-        _invoiceRepository = invoiceRepository;
         _logger = logger;
     }
 
     /// <summary>
     /// Processes a UBL invoice from XML content
     /// </summary>
-    public async Task<ProcessingResult> ProcessInvoiceAsync(string xmlContent, string? anafDownloadId = null)
+    public async Task<ProcessingResult<InvoiceType>> ProcessInvoiceAsync(string xmlContent, string? anafDownloadId = null)
     {
         try
         {
@@ -42,7 +32,7 @@ public class UblProcessingService
             if (ublInvoice == null)
             {
                 _logger.LogError("Failed to parse UBL XML");
-                return ProcessingResult.Failed("Failed to parse UBL XML content");
+                return ProcessingResult<InvoiceType>.Failed("Failed to parse UBL XML content");
             }
 
             _logger.LogInformation("UBL XML parsed successfully. Invoice: {InvoiceNumber}", ublInvoice.ID?.Value);
@@ -54,63 +44,47 @@ public class UblProcessingService
                 _logger.LogWarning("UBL validation failed for invoice {InvoiceNumber}: {Errors}", 
                     ublInvoice.ID?.Value, string.Join(", ", validationResult.Errors.Select(e => e.ErrorMessage)));
                 
-                return ProcessingResult.Failed(validationResult.Errors);
+                return ProcessingResult<InvoiceType>.Failed(validationResult.Errors);
             }
 
             _logger.LogInformation("UBL validation passed for invoice {InvoiceNumber}", ublInvoice.ID?.Value);
-
-            // 3. Check for duplicate invoice
-            var existingInvoice = await _invoiceRepository.GetByNumberAsync(ublInvoice.ID?.Value ?? "");
-            if (existingInvoice != null)
-            {
-                _logger.LogWarning("Invoice {InvoiceNumber} already exists in database", ublInvoice.ID?.Value);
-                return ProcessingResult.Failed($"Invoice with number '{ublInvoice.ID?.Value}' already exists");
-            }
-
-            // 4. Map to domain model
-            var domainInvoice = await MapToDomainAsync(ublInvoice, xmlContent, anafDownloadId);
             
-            _logger.LogInformation("Successfully mapped invoice {InvoiceNumber} to domain model", domainInvoice.Number);
-
-            return ProcessingResult.Success(domainInvoice);
+            return ProcessingResult<InvoiceType>.Success(ublInvoice);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error processing UBL invoice");
-            return ProcessingResult.Failed($"Processing error: {ex.Message}");
+            return ProcessingResult<InvoiceType>.Failed($"Processing error: {ex.Message}");
         }
     }
 
     /// <summary>
-    /// Converts a domain invoice to UBL format
+    /// Converts a UBL invoice to XML string
     /// </summary>
-    public async Task<string> ConvertToUblXmlAsync(Invoice domainInvoice)
+    public async Task<string> ConvertToUblXmlAsync(InvoiceType ublInvoice)
     {
         try
         {
-            _logger.LogInformation("Converting invoice {InvoiceNumber} to UBL XML", domainInvoice.Number);
+            _logger.LogInformation("Converting invoice {InvoiceNumber} to UBL XML", ublInvoice.ID?.Value);
 
-            // Map to UBL type
-            var ublInvoice = _mapper.Map<InvoiceType>(domainInvoice);
-
-            // Validate the generated UBL
+            // Validate the UBL before converting
             var validationResult = await _ublValidator.ValidateAsync(ublInvoice);
             if (!validationResult.IsValid)
             {
                 var errors = string.Join(", ", validationResult.Errors.Select(e => e.ErrorMessage));
-                throw new InvalidOperationException($"Generated UBL is invalid: {errors}");
+                throw new InvalidOperationException($"UBL invoice is invalid: {errors}");
             }
 
             // Convert to XML
             var xmlContent = ublInvoice.SaveInvoiceToXml();
 
-            _logger.LogInformation("Successfully converted invoice {InvoiceNumber} to UBL XML", domainInvoice.Number);
+            _logger.LogInformation("Successfully converted invoice {InvoiceNumber} to UBL XML", ublInvoice.ID?.Value);
 
             return xmlContent;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error converting invoice {InvoiceNumber} to UBL XML", domainInvoice.Number);
+            _logger.LogError(ex, "Error converting invoice {InvoiceNumber} to UBL XML", ublInvoice.ID?.Value);
             throw;
         }
     }
@@ -118,7 +92,7 @@ public class UblProcessingService
     /// <summary>
     /// Validates UBL XML without processing
     /// </summary>
-    public async Task<ProcessingResult> ValidateUblXmlAsync(string xmlContent)
+    public async Task<ProcessingResult<InvoiceType>> ValidateUblXmlAsync(string xmlContent)
     {
         try
         {
@@ -128,7 +102,7 @@ public class UblProcessingService
             var ublInvoice = UblSharpExtensions.LoadInvoiceFromXml(xmlContent);
             if (ublInvoice == null)
             {
-                return ProcessingResult.Failed("Failed to parse UBL XML content");
+                return ProcessingResult<InvoiceType>.Failed("Failed to parse UBL XML content");
             }
 
             // Validate against RO_CIUS rules
@@ -136,19 +110,15 @@ public class UblProcessingService
             
             if (!validationResult.IsValid)
             {
-                return ProcessingResult.Failed(validationResult.Errors);
+                return ProcessingResult<InvoiceType>.Failed(validationResult.Errors);
             }
 
-            // Create a temporary domain invoice for return (without persistence)
-            var domainInvoice = _mapper.Map<Invoice>(ublInvoice);
-            domainInvoice.UblXml = xmlContent;
-
-            return ProcessingResult.Success(domainInvoice);
+            return ProcessingResult<InvoiceType>.Success(ublInvoice);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error validating UBL XML");
-            return ProcessingResult.Failed($"Validation error: {ex.Message}");
+            return ProcessingResult<InvoiceType>.Failed($"Validation error: {ex.Message}");
         }
     }
 
@@ -168,62 +138,6 @@ public class UblProcessingService
             VatBreakdownCount = ublInvoice.TaxTotal?.FirstOrDefault()?.TaxSubtotal?.Count ?? 0,
             ValidationSummary = ublInvoice.GetValidationSummary()
         };
-    }
-
-    private async Task<Invoice> MapToDomainAsync(InvoiceType ublInvoice, string xmlContent, string? anafDownloadId)
-    {
-        // Map the main invoice
-        var domainInvoice = _mapper.Map<Invoice>(ublInvoice);
-        
-        // Store the original XML
-        domainInvoice.UblXml = xmlContent;
-        domainInvoice.AnafDownloadId = anafDownloadId;
-
-        // Handle party relationships - check if parties already exist
-        if (ublInvoice.AccountingSupplierParty?.Party != null)
-        {
-            var sellerVatId = ublInvoice.GetSellerVatId();
-            var sellerLegalId = ublInvoice.GetSellerLegalId();
-            
-            var existingSeller = await FindExistingPartyAsync(sellerVatId, sellerLegalId);
-            if (existingSeller != null)
-            {
-                domainInvoice.Seller = existingSeller;
-                domainInvoice.SellerId = existingSeller.Id;
-            }
-        }
-
-        if (ublInvoice.AccountingCustomerParty?.Party != null)
-        {
-            var buyerVatId = ublInvoice.GetBuyerVatId();
-            var buyerLegalId = ublInvoice.GetBuyerLegalId();
-            
-            var existingBuyer = await FindExistingPartyAsync(buyerVatId, buyerLegalId);
-            if (existingBuyer != null)
-            {
-                domainInvoice.Buyer = existingBuyer;
-                domainInvoice.BuyerId = existingBuyer.Id;
-            }
-        }
-
-        return domainInvoice;
-    }
-
-    private async Task<Party?> FindExistingPartyAsync(string? vatId, string? legalId)
-    {
-        if (!string.IsNullOrEmpty(vatId))
-        {
-            var partyByVat = await _invoiceRepository.GetPartyByVatIdAsync(vatId);
-            if (partyByVat != null) return partyByVat;
-        }
-
-        if (!string.IsNullOrEmpty(legalId))
-        {
-            var partyByLegal = await _invoiceRepository.GetPartyByLegalIdAsync(legalId);
-            if (partyByLegal != null) return partyByLegal;
-        }
-
-        return null;
     }
 }
 

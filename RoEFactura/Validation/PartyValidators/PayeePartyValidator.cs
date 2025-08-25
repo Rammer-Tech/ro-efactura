@@ -1,6 +1,7 @@
 using FluentValidation;
 using UblSharp.CommonAggregateComponents;
 
+
 namespace RoEFactura.Validation.PartyValidators;
 
 public class PayeePartyValidator : AbstractValidator<PartyType>
