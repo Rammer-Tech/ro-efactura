@@ -16,21 +16,28 @@ public class BuyerPartyValidator : AbstractValidator<CustomerPartyType>
             .WithMessage("Romanian buyer must have either Legal Registration ID (CUI/CIF) or VAT identifier.");
 
         // Required buyer name (EN 16931 requirement)
-        RuleFor(x => x.Party?.PartyName?.FirstOrDefault()?.Name?.Value)
-            .NotEmpty()
+        RuleFor(x => x)
+            .Must(HasValidBuyerName)
             .WithErrorCode("BR-7")
             .WithMessage("Buyer name is required.");
 
         // Address validation for Romanian parties
-        RuleFor(x => x.Party?.PostalAddress)
-            .SetValidator(new RomanianAddressValidator()!)
-            .When(x => IsRomanianParty(x));
+        RuleFor(x => x)
+            .Must(x => x.Party?.PostalAddress != null)
+            .When(x => IsRomanianParty(x))
+            .WithErrorCode("BR-10-ADDRESS")
+            .WithMessage("Romanian buyer must have a postal address.");
 
         // Ensure postal address exists (EN 16931 requirement)
-        RuleFor(x => x.Party?.PostalAddress)
-            .NotNull()
+        RuleFor(x => x)
+            .Must(x => x.Party?.PostalAddress != null)
             .WithErrorCode("BR-10")
             .WithMessage("Buyer postal address is required.");
+    }
+
+    private static bool HasValidBuyerName(CustomerPartyType party)
+    {
+        return !string.IsNullOrEmpty(party?.Party?.PartyName?.FirstOrDefault()?.Name?.Value);
     }
 
     private static bool IsRomanianParty(CustomerPartyType party)

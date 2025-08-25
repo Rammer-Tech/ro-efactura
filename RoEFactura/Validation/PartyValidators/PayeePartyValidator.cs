@@ -9,23 +9,33 @@ public class PayeePartyValidator : AbstractValidator<PartyType>
     public PayeePartyValidator()
     {
         // BR-RO-130: In forced execution, Payee must have name and legal registration ID
-        RuleFor(x => x.PartyName?.FirstOrDefault()?.Name?.Value)
-            .NotEmpty()
+        RuleFor(x => x)
+            .Must(HasValidPayeeName)
             .When(x => IsForcedExecution(x))
             .WithErrorCode("BR-RO-130")
             .WithMessage("In forced execution, Payee name is required and must be the execution authority name.");
 
-        RuleFor(x => x.PartyLegalEntity?.FirstOrDefault()?.CompanyID?.Value)
-            .NotEmpty()
+        RuleFor(x => x)
+            .Must(HasValidLegalRegistrationId)
             .When(x => IsForcedExecution(x))
             .WithErrorCode("BR-RO-130")
             .WithMessage("In forced execution, Payee legal registration identifier is required.");
 
         // EN 16931: If payee exists and is different from seller, name is required
-        RuleFor(x => x.PartyName?.FirstOrDefault()?.Name?.Value)
-            .NotEmpty()
+        RuleFor(x => x)
+            .Must(HasValidPayeeName)
             .WithErrorCode("BR-17")
             .WithMessage("Payee name is required when payee is specified.");
+    }
+
+    private static bool HasValidPayeeName(PartyType party)
+    {
+        return !string.IsNullOrEmpty(party?.PartyName?.FirstOrDefault()?.Name?.Value);
+    }
+
+    private static bool HasValidLegalRegistrationId(PartyType party)
+    {
+        return !string.IsNullOrEmpty(party?.PartyLegalEntity?.FirstOrDefault()?.CompanyID?.Value);
     }
 
     private static bool IsForcedExecution(PartyType party)

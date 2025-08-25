@@ -1,5 +1,6 @@
 using FluentValidation;
 using Microsoft.Extensions.Logging;
+using RoEFactura.Extensions;
 using RoEFactura.Models;
 using UblSharp;
 

@@ -9,20 +9,20 @@ public class TotalsValidator : AbstractValidator<InvoiceType>
     public TotalsValidator()
     {
         // BR-12: Invoice total amount without VAT is required
-        RuleFor(x => x.LegalMonetaryTotal?.TaxExclusiveAmount?.Value)
-            .NotNull()
+        RuleFor(x => x)
+            .Must(HasValidTaxExclusiveAmount)
             .WithErrorCode("BR-12")
             .WithMessage("Invoice total amount without VAT is required.");
 
         // BR-14: Invoice total amount with VAT is required
-        RuleFor(x => x.LegalMonetaryTotal?.TaxInclusiveAmount?.Value)
-            .NotNull()
+        RuleFor(x => x)
+            .Must(HasValidTaxInclusiveAmount)
             .WithErrorCode("BR-14")
             .WithMessage("Invoice total amount with VAT is required.");
 
         // BR-15: Amount due for payment is required
-        RuleFor(x => x.LegalMonetaryTotal?.PayableAmount?.Value)
-            .NotNull()
+        RuleFor(x => x)
+            .Must(HasValidPayableAmount)
             .WithErrorCode("BR-15")
             .WithMessage("Amount due for payment is required.");
 
@@ -132,5 +132,20 @@ public class TotalsValidator : AbstractValidator<InvoiceType>
             return true;
 
         return endDate >= startDate;
+    }
+
+    private static bool HasValidTaxExclusiveAmount(InvoiceType invoice)
+    {
+        return invoice?.LegalMonetaryTotal?.TaxExclusiveAmount?.Value != null;
+    }
+
+    private static bool HasValidTaxInclusiveAmount(InvoiceType invoice)
+    {
+        return invoice?.LegalMonetaryTotal?.TaxInclusiveAmount?.Value != null;
+    }
+
+    private static bool HasValidPayableAmount(InvoiceType invoice)
+    {
+        return invoice?.LegalMonetaryTotal?.PayableAmount?.Value != null;
     }
 }

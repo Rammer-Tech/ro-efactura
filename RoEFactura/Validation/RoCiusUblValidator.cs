@@ -14,57 +14,55 @@ public class RoCiusUblValidator : AbstractValidator<InvoiceType>
     public RoCiusUblValidator()
     {
         // BR-RO-CIUS: CustomizationID must be RO_CIUS
-        RuleFor(x => x.CustomizationID?.Value)
-            .Equal(RomanianConstants.RoCiusCustomizationId)
+        RuleFor(x => x)
+            .Must(HasValidCustomizationId)
             .WithErrorCode("BR-RO-CIUS")
             .WithMessage($"CustomizationID must be: {RomanianConstants.RoCiusCustomizationId}");
 
         // BR-RO-010: Invoice number must contain at least one digit
-        RuleFor(x => x.ID?.Value)
-            .Must(ContainsDigit)
+        RuleFor(x => x)
+            .Must(HasValidInvoiceNumber)
             .WithErrorCode("BR-RO-010")
             .WithMessage("Invoice number must contain at least one digit.");
 
         // BR-RO-020: Invoice type code must be one of allowed values
-        RuleFor(x => x.InvoiceTypeCode?.Value)
-            .Must(code => RomanianConstants.ValidInvoiceTypeCodes.Contains(code ?? ""))
+        RuleFor(x => x)
+            .Must(HasValidInvoiceTypeCode)
             .WithErrorCode("BR-RO-020")
             .WithMessage($"Invalid invoice type code. Must be one of: {string.Join(", ", RomanianConstants.ValidInvoiceTypeCodes)}");
 
         // BR-RO-030: If document currency ≠ RON, then VAT currency must be RON
-        When(x => x.DocumentCurrencyCode?.Value != "RON", () =>
-        {
-            RuleFor(x => x.TaxCurrencyCode?.Value)
-                .Equal("RON")
-                .WithErrorCode("BR-RO-030")
-                .WithMessage("When document currency is not RON, VAT accounting currency must be RON.");
-        });
+        RuleFor(x => x)
+            .Must(HasValidVatCurrency)
+            .When(x => x.DocumentCurrencyCode?.Value != "RON")
+            .WithErrorCode("BR-RO-030")
+            .WithMessage("When document currency is not RON, VAT accounting currency must be RON.");
 
         // BR-RO-040: VAT point date code validation
-        RuleFor(x => x.TaxPointDate?.Value)
-            .Must((invoice, taxPointDate) => ValidateVatPointDateCode(invoice))
-            .When(x => !string.IsNullOrEmpty(x.TaxPointDate?.Value))
+        RuleFor(x => x)
+            .Must(ValidateVatPointDateCode)
+            .When(x => x.TaxPointDate?.Value != null)
             .WithErrorCode("BR-RO-040")
             .WithMessage($"VAT point date code must be one of: {string.Join(", ", RomanianConstants.ValidVatPointDateCodes)}");
 
         // Core EN 16931 requirements
-        RuleFor(x => x.ID?.Value)
-            .NotEmpty()
+        RuleFor(x => x)
+            .Must(HasValidId)
             .WithErrorCode("BR-1")
             .WithMessage("Invoice number is required.");
 
-        RuleFor(x => x.IssueDate?.Value)
-            .NotEmpty()
+        RuleFor(x => x)
+            .Must(HasValidIssueDate)
             .WithErrorCode("BR-2")
             .WithMessage("Invoice issue date is required.");
 
-        RuleFor(x => x.InvoiceTypeCode?.Value)
-            .NotEmpty()
+        RuleFor(x => x)
+            .Must(HasValidTypeCode)
             .WithErrorCode("BR-3")
             .WithMessage("Invoice type code is required.");
 
-        RuleFor(x => x.DocumentCurrencyCode?.Value)
-            .NotEmpty()
+        RuleFor(x => x)
+            .Must(HasValidDocumentCurrency)
             .WithErrorCode("BR-5")
             .WithMessage("Invoice currency code is required.");
 
@@ -143,5 +141,47 @@ public class RoCiusUblValidator : AbstractValidator<InvoiceType>
         
         var decimalPlaces = BitConverter.GetBytes(decimal.GetBits(value.Value)[3])[2];
         return decimalPlaces <= 2;
+    }
+
+    private static bool HasValidCustomizationId(InvoiceType invoice)
+    {
+        return invoice?.CustomizationID?.Value == RomanianConstants.RoCiusCustomizationId;
+    }
+
+    private static bool HasValidInvoiceNumber(InvoiceType invoice)
+    {
+        var invoiceNumber = invoice?.ID?.Value;
+        return ContainsDigit(invoiceNumber);
+    }
+
+    private static bool HasValidInvoiceTypeCode(InvoiceType invoice)
+    {
+        var code = invoice?.InvoiceTypeCode?.Value ?? "";
+        return RomanianConstants.ValidInvoiceTypeCodes.Contains(code);
+    }
+
+    private static bool HasValidVatCurrency(InvoiceType invoice)
+    {
+        return invoice?.TaxCurrencyCode?.Value == "RON";
+    }
+
+    private static bool HasValidId(InvoiceType invoice)
+    {
+        return !string.IsNullOrEmpty(invoice?.ID?.Value);
+    }
+
+    private static bool HasValidIssueDate(InvoiceType invoice)
+    {
+        return invoice?.IssueDate?.Value != null;
+    }
+
+    private static bool HasValidTypeCode(InvoiceType invoice)
+    {
+        return !string.IsNullOrEmpty(invoice?.InvoiceTypeCode?.Value);
+    }
+
+    private static bool HasValidDocumentCurrency(InvoiceType invoice)
+    {
+        return !string.IsNullOrEmpty(invoice?.DocumentCurrencyCode?.Value);
     }
 }
