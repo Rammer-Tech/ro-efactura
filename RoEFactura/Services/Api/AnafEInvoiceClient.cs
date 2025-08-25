@@ -1,22 +1,21 @@
-﻿using System.IO;
-using System.IO.Compression;
-using System.Net.Http;
+﻿using System.IO.Compression;
 using System.Net.Http.Headers;
 using Ardalis.GuardClauses;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using RoEFactura.Dtos;
+using RoEFactura.Extensions;
 using RoEFactura.Models;
 using RoEFactura.Services.Processing;
 using UblSharp;
 
 namespace RoEFactura.Services.Api;
 
-public class AnafEInvoiceClient
+internal class AnafEInvoiceClient : IAnafEInvoiceClient
 {
     private readonly HttpClient _httpClient;
-    private readonly UblProcessingService _ublProcessingService;
+    private readonly IUblProcessingService _ublProcessingService;
     private readonly ILogger<AnafEInvoiceClient> _logger;
     private readonly string _pagedEndpoint;
     private readonly string _nonPagedEndpoint;
@@ -27,7 +26,7 @@ public class AnafEInvoiceClient
     public AnafEInvoiceClient(
         HttpClient httpClient, 
         IHostEnvironment env, 
-        UblProcessingService ublProcessingService,
+        IUblProcessingService ublProcessingService,
         ILogger<AnafEInvoiceClient> logger)
     {
         _httpClient = httpClient;
@@ -313,7 +312,8 @@ public class AnafEInvoiceClient
                 var xmlContent = await File.ReadAllTextAsync(xmlFile);
 
                 // Process through UBL pipeline
-                var result = await _ublProcessingService.ProcessInvoiceAsync(xmlContent, eInvoiceDownloadId);
+                var xmlBytes = System.Text.Encoding.UTF8.GetBytes(xmlContent);
+                var result = await _ublProcessingService.ProcessInvoiceXmlAsync(xmlBytes, eInvoiceDownloadId);
 
                 if (result.IsSuccess && result.Data != null)
                 {
@@ -357,7 +357,14 @@ public class AnafEInvoiceClient
         {
             _logger.LogInformation("Validating invoice XML content");
 
-            var result = await _ublProcessingService.ValidateUblXmlAsync(xmlContent);
+            // Parse XML content to create an invoice object first
+            var ublInvoice = UblSharpExtensions.LoadInvoiceFromXml(xmlContent);
+            if (ublInvoice == null)
+            {
+                return ProcessingResult<InvoiceType>.Failed("Failed to parse UBL XML content");
+            }
+            
+            var result = await _ublProcessingService.ValidateInvoiceAsync(ublInvoice);
 
             if (result.IsSuccess)
             {
@@ -386,13 +393,14 @@ public class AnafEInvoiceClient
         IEnumerable<string> eInvoiceDownloadIds)
     {
         token = Guard.Against.NullOrWhiteSpace(token);
-        Guard.Against.Null(eInvoiceDownloadIds);
+        var invoiceDownloadIds = eInvoiceDownloadIds.ToList();
+        Guard.Against.Null(invoiceDownloadIds);
 
         var results = new List<ProcessingResult<InvoiceType>>();
 
-        _logger.LogInformation("Processing {Count} invoices in batch", eInvoiceDownloadIds.Count());
+        _logger.LogInformation("Processing {Count} invoices in batch", invoiceDownloadIds.Count());
 
-        foreach (var downloadId in eInvoiceDownloadIds)
+        foreach (var downloadId in invoiceDownloadIds)
         {
             try
             {

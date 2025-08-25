@@ -21,11 +21,15 @@ public static class ServiceCollectionExtensions
         // Register HTTP clients for API access
         services.AddHttpClient<AnafEInvoiceClient>();
 
-        // Register processing services
-        services.AddScoped<UblProcessingService>();
+        // Register HttpClient factory for ANAF OAuth  
+        services.AddHttpClient();
 
-        // Register existing services
-        services.AddTransient<AnafOAuthClient>();
+        // Register service interfaces with internal implementations
+        services.AddScoped<IAnafOAuthClient, AnafOAuthClient>();
+        services.AddScoped<IAnafEInvoiceClient, AnafEInvoiceClient>();
+        services.AddScoped<IUblProcessingService, UblProcessingService>();
+        
+        // Register utilities
         services.AddTransient<XmlFileDeserializer>();
 
         return services;

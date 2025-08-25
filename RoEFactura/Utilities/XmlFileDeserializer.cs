@@ -2,7 +2,7 @@
 
 namespace RoEFactura.Utilities;
 
-public class XmlFileDeserializer
+internal class XmlFileDeserializer
 {
     public T DeserializeXmlFromFile<T>(string filePath)
     {
