@@ -1,0 +1,2 @@
+# Ignore PDF documentation files
+docs/*.pdf

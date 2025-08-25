@@ -4,23 +4,35 @@ using System.Net.Http;
 using System.Net.Http.Headers;
 using Ardalis.GuardClauses;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using RoEFactura.Dtos;
+using RoEFactura.Domain.Entities;
+using RoEFactura.Models;
+using RoEFactura.Services.Processing;
 
 namespace RoEFactura.Services.Api;
 
 public class AnafEInvoiceClient
 {
     private readonly HttpClient _httpClient;
+    private readonly UblProcessingService _ublProcessingService;
+    private readonly ILogger<AnafEInvoiceClient> _logger;
     private readonly string _pagedEndpoint;
     private readonly string _nonPagedEndpoint;
     private readonly string _downloadEndpoint;
     private readonly string _validateEndpoint;
     private readonly string _uploadEndpoint;
 
-    public AnafEInvoiceClient(HttpClient httpClient, IHostEnvironment env)
+    public AnafEInvoiceClient(
+        HttpClient httpClient, 
+        IHostEnvironment env, 
+        UblProcessingService ublProcessingService,
+        ILogger<AnafEInvoiceClient> logger)
     {
         _httpClient = httpClient;
+        _ublProcessingService = ublProcessingService;
+        _logger = logger;
 
         // if (env.IsProduction())
         {
@@ -261,5 +273,206 @@ public class AnafEInvoiceClient
         HttpResponseMessage response = await _httpClient.SendAsync(request);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadAsStringAsync();
+    }
+
+    /// <summary>
+    /// Downloads and processes an invoice from ANAF, storing it in the database
+    /// </summary>
+    public async Task<ProcessingResult> ProcessDownloadedInvoiceAsync(string token, string eInvoiceDownloadId)
+    {
+        token = Guard.Against.NullOrWhiteSpace(token);
+        eInvoiceDownloadId = Guard.Against.NullOrWhiteSpace(eInvoiceDownloadId);
+
+        try
+        {
+            _logger.LogInformation("Processing downloaded invoice with ID: {DownloadId}", eInvoiceDownloadId);
+
+            // Note: Check for existing invoice would be handled at repository level
+
+            // Create temporary directories
+            var tempPath = Path.Combine(Path.GetTempPath(), "anaf_invoices", Guid.NewGuid().ToString());
+            var zipPath = Path.Combine(tempPath, "downloads");
+            var extractPath = Path.Combine(tempPath, "extracted");
+
+            try
+            {
+                // Download and extract
+                await DownloadEInvoiceAsync(token, zipPath, extractPath, eInvoiceDownloadId);
+
+                // Find XML files in extracted directory
+                var xmlFiles = Directory.GetFiles(extractPath, "*.xml", SearchOption.AllDirectories);
+                
+                if (!xmlFiles.Any())
+                {
+                    _logger.LogWarning("No XML files found in downloaded invoice {DownloadId}", eInvoiceDownloadId);
+                    return ProcessingResult.Failed("No XML files found in downloaded invoice");
+                }
+
+                // Process the first XML file (assuming one invoice per download)
+                var xmlFile = xmlFiles.First();
+                var xmlContent = await File.ReadAllTextAsync(xmlFile);
+
+                // Process through UBL pipeline
+                var result = await _ublProcessingService.ProcessInvoiceAsync(xmlContent, eInvoiceDownloadId);
+
+                if (result.IsSuccess && result.Invoice != null)
+                {
+                    _logger.LogInformation("Successfully processed downloaded invoice {InvoiceNumber} from ANAF", 
+                        result.Invoice.Number);
+                }
+
+                return result;
+            }
+            finally
+            {
+                // Cleanup temporary directories
+                if (Directory.Exists(tempPath))
+                {
+                    try
+                    {
+                        Directory.Delete(tempPath, true);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to cleanup temporary directory: {TempPath}", tempPath);
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error processing downloaded invoice {DownloadId}", eInvoiceDownloadId);
+            return ProcessingResult.Failed($"Processing error: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Creates a UBL invoice from domain model and uploads it to ANAF
+    /// </summary>
+    public async Task<string> CreateAndUploadInvoiceAsync(string token, Invoice domainInvoice)
+    {
+        token = Guard.Against.NullOrWhiteSpace(token);
+        Guard.Against.Null(domainInvoice);
+
+        try
+        {
+            _logger.LogInformation("Creating and uploading invoice {InvoiceNumber} to ANAF", domainInvoice.Number);
+
+            // Convert domain to UBL XML
+            var xmlContent = await _ublProcessingService.ConvertToUblXmlAsync(domainInvoice);
+
+            // Create temporary file
+            var tempXmlPath = Path.Combine(Path.GetTempPath(), $"invoice_{domainInvoice.Number}_{Guid.NewGuid()}.xml");
+            
+            try
+            {
+                await File.WriteAllTextAsync(tempXmlPath, xmlContent);
+
+                // Upload using existing method
+                var response = await UploadXmlAsync(token, tempXmlPath);
+
+                _logger.LogInformation("Successfully uploaded invoice {InvoiceNumber} to ANAF", domainInvoice.Number);
+
+                return response;
+            }
+            finally
+            {
+                // Cleanup temporary file
+                if (File.Exists(tempXmlPath))
+                {
+                    try
+                    {
+                        File.Delete(tempXmlPath);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to cleanup temporary file: {TempPath}", tempXmlPath);
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error creating and uploading invoice {InvoiceNumber}", domainInvoice.Number);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Validates UBL XML content against RO_CIUS rules
+    /// </summary>
+    public async Task<ProcessingResult> ValidateInvoiceXmlAsync(string xmlContent)
+    {
+        Guard.Against.NullOrWhiteSpace(xmlContent);
+
+        try
+        {
+            _logger.LogInformation("Validating invoice XML content");
+
+            var result = await _ublProcessingService.ValidateUblXmlAsync(xmlContent);
+
+            if (result.IsSuccess)
+            {
+                _logger.LogInformation("Invoice XML validation successful");
+            }
+            else
+            {
+                _logger.LogWarning("Invoice XML validation failed: {Errors}", 
+                    string.Join(", ", result.Errors.Select(e => e.ErrorMessage)));
+            }
+
+            return result;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error validating invoice XML");
+            return ProcessingResult.Failed($"Validation error: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Processes multiple downloaded invoices in batch
+    /// </summary>
+    public async Task<List<ProcessingResult>> ProcessMultipleInvoicesAsync(
+        string token, 
+        IEnumerable<string> eInvoiceDownloadIds)
+    {
+        token = Guard.Against.NullOrWhiteSpace(token);
+        Guard.Against.Null(eInvoiceDownloadIds);
+
+        var results = new List<ProcessingResult>();
+
+        _logger.LogInformation("Processing {Count} invoices in batch", eInvoiceDownloadIds.Count());
+
+        foreach (var downloadId in eInvoiceDownloadIds)
+        {
+            try
+            {
+                var result = await ProcessDownloadedInvoiceAsync(token, downloadId);
+                results.Add(result);
+
+                if (result.IsSuccess)
+                {
+                    _logger.LogInformation("Successfully processed invoice {InvoiceNumber}", 
+                        result.Invoice?.Number);
+                }
+                else
+                {
+                    _logger.LogWarning("Failed to process invoice {DownloadId}: {Errors}", 
+                        downloadId, string.Join(", ", result.Errors.Select(e => e.ErrorMessage)));
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error processing invoice {DownloadId} in batch", downloadId);
+                results.Add(ProcessingResult.Failed($"Processing error: {ex.Message}"));
+            }
+        }
+
+        var successCount = results.Count(r => r.IsSuccess);
+        _logger.LogInformation("Batch processing completed: {Success}/{Total} invoices processed successfully", 
+            successCount, results.Count);
+
+        return results;
     }
 }
