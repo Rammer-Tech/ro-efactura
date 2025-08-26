@@ -277,7 +277,7 @@ const EFacturaAuthorization = () => {
                   </tr>
                   <tr>
                     <td><strong>Redirect URI:</strong></td>
-                    <td><code>http://localhost:5126/api/efactura/oauth/callback</code></td>
+                    <td><code>http://localhost:7205/api/efactura/oauth/callback</code></td>
                   </tr>
                   <tr>
                     <td><strong>Response Type:</strong></td>
