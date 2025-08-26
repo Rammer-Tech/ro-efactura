@@ -48,3 +48,4 @@ reports/
 _ReSharper*/
 *.[Rr]e[Ss]harper
 
+/TestReactApp/node_modules
