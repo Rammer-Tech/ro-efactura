@@ -1,10 +1,19 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import CertificateTest from './components/CertificateTest';
 import AnafAuthTest from './components/AnafAuthTest';
+import EFacturaAuthorization from './components/EFacturaAuthorization';
 import 'bootstrap/dist/css/bootstrap.min.css';
 
 function App() {
   const [activeTab, setActiveTab] = useState('certificates');
+
+  useEffect(() => {
+    // Check if we're on the efactura-auth route (OAuth callback)
+    const path = window.location.pathname;
+    if (path === '/efactura-auth') {
+      setActiveTab('efactura');
+    }
+  }, []);
 
   return (
     <div className="App">
@@ -25,6 +34,12 @@ function App() {
             >
               🔐 ANAF Auth
             </button>
+            <button 
+              className={`nav-link btn btn-link ${activeTab === 'efactura' ? 'active text-warning' : 'text-white'}`}
+              onClick={() => setActiveTab('efactura')}
+            >
+              📋 eFactura Integration
+            </button>
           </div>
         </div>
       </nav>
@@ -33,6 +48,7 @@ function App() {
       <div className="container-fluid">
         {activeTab === 'certificates' && <CertificateTest />}
         {activeTab === 'auth' && <AnafAuthTest />}
+        {activeTab === 'efactura' && <EFacturaAuthorization />}
       </div>
 
       {/* Footer */}
