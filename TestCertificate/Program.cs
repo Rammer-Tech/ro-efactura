@@ -1,4 +1,5 @@
 using RoEFactura;
+using TestCertificate.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -8,6 +9,22 @@ builder.Services.AddOpenApi();
 
 // Add RoEFactura services
 builder.Services.AddRoEFactura();
+
+// Add session support for OAuth state management
+builder.Services.AddDistributedMemoryCache();
+builder.Services.AddSession(options =>
+{
+    options.IdleTimeout = TimeSpan.FromMinutes(30);
+    options.Cookie.HttpOnly = true;
+    options.Cookie.IsEssential = true;
+    options.Cookie.SameSite = SameSiteMode.Lax; // For local testing
+});
+
+// Add HttpClient factory
+builder.Services.AddHttpClient();
+
+// Add token store as singleton
+builder.Services.AddSingleton<ITokenStore, InMemoryTokenStore>();
 
 // Add CORS for React app
 builder.Services.AddCors(options =>
@@ -32,6 +49,9 @@ if (app.Environment.IsDevelopment())
 
 // Enable CORS
 app.UseCors("AllowReactApp");
+
+// Enable session middleware
+app.UseSession();
 
 app.UseHttpsRedirection();
 
