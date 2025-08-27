@@ -101,7 +101,7 @@ public class EFacturaOAuthController : ControllerBase
             }
 
             // Exchange code for token
-            var tokenResponse = await ExchangeCodeForToken(code);
+            EFacturaTokenResponse? tokenResponse = await ExchangeCodeForToken(code);
 
             if (tokenResponse == null)
             {
@@ -125,7 +125,7 @@ public class EFacturaOAuthController : ControllerBase
 
             _tokenStore.SaveToken("default", token);
 
-            _logger.LogInformation("Token successfully stored, expires at {ExpiresAt}", token.ExpiresAt);
+            _logger.LogInformation("Token {AccessToken} successfully stored, expires at {ExpiresAt}",token.AccessToken, token.ExpiresAt);
 
             // Redirect back to React app with success
             return Redirect("http://localhost:3000/efactura-auth?success=true");
@@ -134,85 +134,6 @@ public class EFacturaOAuthController : ControllerBase
         {
             _logger.LogError(ex, "OAuth callback failed");
             return Redirect($"http://localhost:3000/efactura-auth?error={Uri.EscapeDataString(ex.Message)}");
-        }
-    }
-
-    /// <summary>
-    /// Get current authorization status
-    /// </summary>
-    [HttpGet("status")]
-    public IActionResult GetAuthStatus()
-    {
-        var token = _tokenStore.GetToken("default");
-
-        if (token == null)
-        {
-            return Ok(new EFacturaAuthStatus
-            {
-                IsAuthorized = false
-            });
-        }
-
-        return Ok(new EFacturaAuthStatus
-        {
-            IsAuthorized = true,
-            ExpiresAt = token.ExpiresAt,
-            TokenType = token.TokenType,
-            TokenInfo = new Dictionary<string, object>
-            {
-                ["has_refresh_token"] = !string.IsNullOrEmpty(token.RefreshToken),
-                ["created_at"] = token.CreatedAt,
-                ["scope"] = token.Scope ?? "N/A",
-                ["debug_info"] = token.DebugInfo ?? new Dictionary<string, object>()
-            }
-        });
-    }
-
-    /// <summary>
-    /// Clear stored tokens
-    /// </summary>
-    [HttpDelete("clear")]
-    public IActionResult ClearAuthorization()
-    {
-        _tokenStore.ClearToken("default");
-        _logger.LogInformation("Authorization cleared");
-
-        return Ok(new { success = true, message = "Authorization cleared" });
-    }
-
-    /// <summary>
-    /// Manual code exchange for testing
-    /// </summary>
-    [HttpPost("exchange-code")]
-    public async Task<IActionResult> ExchangeCode([FromBody] EFacturaCodeExchangeRequest request)
-    {
-        try
-        {
-            var tokenResponse = await ExchangeCodeForToken(request.Code);
-
-            if (tokenResponse == null)
-            {
-                return BadRequest(new { success = false, error = "Token exchange failed" });
-            }
-
-            // Store token
-            var token = new EFacturaToken
-            {
-                AccessToken = tokenResponse.AccessToken,
-                RefreshToken = tokenResponse.RefreshToken,
-                ExpiresAt = DateTime.UtcNow.AddSeconds(tokenResponse.ExpiresIn),
-                TokenType = tokenResponse.TokenType,
-                Scope = tokenResponse.Scope
-            };
-
-            _tokenStore.SaveToken("default", token);
-
-            return Ok(new { success = true, data = tokenResponse });
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Manual code exchange failed");
-            return BadRequest(new { success = false, error = ex.Message });
         }
     }
 

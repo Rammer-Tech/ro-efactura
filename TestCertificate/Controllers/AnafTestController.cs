@@ -71,7 +71,8 @@ public class AnafTestController : ControllerBase
                 request.ClientSecret,
                 request.CallbackUrl
             );
-
+            Console.WriteLine(token.ToString());
+            Console.WriteLine(token.AccessToken);
             return Ok(new AuthTestResult
             {
                 Success = true,
