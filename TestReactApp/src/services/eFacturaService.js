@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_BASE_URL = 'https://localhost:7205/api/integrations/einvoice';
+const API_BASE_URL = 'http://localhost:5126/api/integrations/einvoice';
 
 // Create axios instance with default config
 const apiClient = axios.create({

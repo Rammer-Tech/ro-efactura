@@ -35,7 +35,7 @@ const EFacturaAuthorization = () => {
     try {
       const status = await eFacturaService.getAuthStatus();
       setAuthStatus(status);
-      setDebugInfo(status.tokenInfo);
+      setDebugInfo(status.additionalInfo);
     } catch (err) {
       console.error('Error checking auth status:', err);
     }
@@ -62,9 +62,9 @@ const EFacturaAuthorization = () => {
     try {
       const result = await eFacturaService.initiateOAuth();
       
-      if (result.success && result.authUrl) {
+      if (result.success && result.authorizationUrl) {
         // Redirect to ANAF OAuth page (exactly like SmartBill)
-        window.location.href = result.authUrl;
+        window.location.href = result.authorizationUrl;
       } else {
         setError(result.error || 'Failed to initiate authorization');
       }

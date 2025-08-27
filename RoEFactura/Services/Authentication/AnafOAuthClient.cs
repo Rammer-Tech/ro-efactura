@@ -1,5 +1,8 @@
-﻿using System.Security.Cryptography.X509Certificates;
+﻿using System.Net.Http.Headers;
+using System.Security.Cryptography.X509Certificates;
+using System.Text;
 using System.Text.Json;
+using RoEFactura.Models;
 
 namespace RoEFactura.Services.Authentication;
 
@@ -324,5 +327,181 @@ internal class AnafOAuthClient : IAnafOAuthClient
             // If any error occurs during validation, exclude the certificate
             return false;
         }
+    }
+    
+    // ===== OAuth Redirect Flow Implementation (for web apps) =====
+    
+    /// <summary>
+    /// Generates the OAuth authorization URL for redirecting users to ANAF
+    /// </summary>
+    public string GenerateAuthorizationUrl(string clientId, string redirectUri, string? state = null)
+    {
+        var authorizeUrl = "https://logincert.anaf.ro/anaf-oauth2/v1/authorize";
+        
+        var url = $"{authorizeUrl}?" +
+            $"response_type=code&" +
+            $"client_id={Uri.EscapeDataString(clientId)}&" +
+            $"redirect_uri={Uri.EscapeDataString(redirectUri)}";
+        
+        if (!string.IsNullOrEmpty(state))
+        {
+            url += $"&state={Uri.EscapeDataString(state)}";
+        }
+        
+        // Include token_content_type=jwt following SmartBill pattern
+        url += "&token_content_type=jwt";
+        
+        return url;
+    }
+    
+    /// <summary>
+    /// Generates the OAuth authorization URL using configured options
+    /// </summary>
+    public string GenerateAuthorizationUrl(AnafOAuthOptions options, string? state = null)
+    {
+        if (options == null || !options.IsValid())
+        {
+            throw new ArgumentException("Invalid OAuth options provided");
+        }
+        
+        var url = $"{options.AuthorizeUrl}?" +
+            $"response_type=code&" +
+            $"client_id={Uri.EscapeDataString(options.ClientId)}&" +
+            $"redirect_uri={Uri.EscapeDataString(options.RedirectUri)}";
+        
+        if (!string.IsNullOrEmpty(state))
+        {
+            url += $"&state={Uri.EscapeDataString(state)}";
+        }
+        
+        if (options.IncludeTokenContentType)
+        {
+            url += "&token_content_type=jwt";
+        }
+        
+        return url;
+    }
+    
+    /// <summary>
+    /// Exchanges an authorization code for access token
+    /// </summary>
+    public async Task<Token> ExchangeAuthorizationCodeAsync(string code, string clientId, string clientSecret, string redirectUri)
+    {
+        var tokenUrl = "https://logincert.anaf.ro/anaf-oauth2/v1/token";
+        
+        using var client = _httpClientFactory.CreateClient();
+        
+        // Use Basic authentication header (following the working implementation)
+        var authValue = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{clientId}:{clientSecret}"));
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", authValue);
+        
+        // Prepare form-urlencoded body
+        var formData = $"grant_type=authorization_code&" +
+            $"code={Uri.EscapeDataString(code)}&" +
+            $"redirect_uri={Uri.EscapeDataString(redirectUri)}&" +
+            $"token_content_type=jwt";
+        
+        var content = new StringContent(formData, Encoding.UTF8, "application/x-www-form-urlencoded");
+        
+        var response = await client.PostAsync(tokenUrl, content);
+        var responseContent = await response.Content.ReadAsStringAsync();
+        
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException(
+                $"Token exchange failed. HTTP Status: {response.StatusCode}. " +
+                $"Response: {responseContent}");
+        }
+        
+        // Parse the response
+        var options = new JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true
+        };
+        
+        var tokenResponse = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(responseContent, options);
+        
+        if (tokenResponse == null || !tokenResponse.ContainsKey("access_token"))
+        {
+            throw new InvalidOperationException($"Invalid token response format: {responseContent}");
+        }
+        
+        return new Token
+        {
+            AccessToken = tokenResponse["access_token"].GetString() ?? string.Empty,
+            RefreshToken = tokenResponse.ContainsKey("refresh_token") ? 
+                tokenResponse["refresh_token"].GetString() ?? string.Empty : string.Empty,
+            ExpiresIn = tokenResponse.ContainsKey("expires_in") ? 
+                tokenResponse["expires_in"].GetInt32() : 3600,
+            TokenType = tokenResponse.ContainsKey("token_type") ? 
+                tokenResponse["token_type"].GetString() ?? "Bearer" : "Bearer",
+            Scope = tokenResponse.ContainsKey("scope") ? 
+                tokenResponse["scope"].GetString() ?? string.Empty : string.Empty
+        };
+    }
+    
+    /// <summary>
+    /// Exchanges an authorization code for access token using configured options
+    /// </summary>
+    public async Task<Token> ExchangeAuthorizationCodeAsync(string code, AnafOAuthOptions options)
+    {
+        if (options == null || !options.IsValid())
+        {
+            throw new ArgumentException("Invalid OAuth options provided");
+        }
+        
+        using var client = _httpClientFactory.CreateClient();
+        
+        // Use Basic authentication header
+        var authValue = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{options.ClientId}:{options.ClientSecret}"));
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", authValue);
+        
+        // Prepare form-urlencoded body
+        var formData = $"grant_type=authorization_code&" +
+            $"code={Uri.EscapeDataString(code)}&" +
+            $"redirect_uri={Uri.EscapeDataString(options.RedirectUri)}";
+        
+        if (options.IncludeTokenContentType)
+        {
+            formData += "&token_content_type=jwt";
+        }
+        
+        var content = new StringContent(formData, Encoding.UTF8, "application/x-www-form-urlencoded");
+        
+        var response = await client.PostAsync(options.TokenUrl, content);
+        var responseContent = await response.Content.ReadAsStringAsync();
+        
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException(
+                $"Token exchange failed. HTTP Status: {response.StatusCode}. " +
+                $"Response: {responseContent}");
+        }
+        
+        // Parse the response
+        var jsonOptions = new JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true
+        };
+        
+        var tokenResponse = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(responseContent, jsonOptions);
+        
+        if (tokenResponse == null || !tokenResponse.ContainsKey("access_token"))
+        {
+            throw new InvalidOperationException($"Invalid token response format: {responseContent}");
+        }
+        
+        return new Token
+        {
+            AccessToken = tokenResponse["access_token"].GetString() ?? string.Empty,
+            RefreshToken = tokenResponse.ContainsKey("refresh_token") ? 
+                tokenResponse["refresh_token"].GetString() ?? string.Empty : string.Empty,
+            ExpiresIn = tokenResponse.ContainsKey("expires_in") ? 
+                tokenResponse["expires_in"].GetInt32() : 3600,
+            TokenType = tokenResponse.ContainsKey("token_type") ? 
+                tokenResponse["token_type"].GetString() ?? "Bearer" : "Bearer",
+            Scope = tokenResponse.ContainsKey("scope") ? 
+                tokenResponse["scope"].GetString() ?? string.Empty : string.Empty
+        };
     }
 }

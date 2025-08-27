@@ -1,6 +1,7 @@
 using FluentValidation;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using RoEFactura.Models;
 using RoEFactura.Services.Api;
 using RoEFactura.Services.Authentication;
 using RoEFactura.Services.Processing;
@@ -41,5 +42,66 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddRoEFactura(this IServiceCollection services)
     {
         return AddRoEFactura(services, null);
+    }
+    
+    /// <summary>
+    /// Adds RoEFactura services with OAuth configuration
+    /// </summary>
+    /// <param name="services">The service collection</param>
+    /// <param name="oauthOptions">OAuth configuration options</param>
+    /// <param name="configuration">Optional additional configuration</param>
+    /// <returns>The service collection for chaining</returns>
+    public static IServiceCollection AddRoEFacturaWithOAuth(this IServiceCollection services, 
+        AnafOAuthOptions oauthOptions, 
+        IConfiguration? configuration = null)
+    {
+        if (oauthOptions == null)
+        {
+            throw new ArgumentNullException(nameof(oauthOptions));
+        }
+        
+        if (!oauthOptions.IsValid())
+        {
+            throw new ArgumentException("Invalid OAuth options provided. Ensure all required properties are set.", nameof(oauthOptions));
+        }
+        
+        // Register base RoEFactura services
+        AddRoEFactura(services, configuration);
+        
+        // Register OAuth options as singleton
+        services.AddSingleton(oauthOptions);
+        
+        return services;
+    }
+    
+    /// <summary>
+    /// Adds RoEFactura services with OAuth configuration from IConfiguration
+    /// </summary>
+    /// <param name="services">The service collection</param>
+    /// <param name="configuration">Configuration containing OAuth settings</param>
+    /// <param name="sectionName">Configuration section name (defaults to "AnafOAuth")</param>
+    /// <returns>The service collection for chaining</returns>
+    public static IServiceCollection AddRoEFacturaWithOAuth(this IServiceCollection services,
+        IConfiguration configuration,
+        string sectionName = "AnafOAuth")
+    {
+        if (configuration == null)
+        {
+            throw new ArgumentNullException(nameof(configuration));
+        }
+        
+        // Bind OAuth options from configuration
+        var oauthOptions = new AnafOAuthOptions();
+        var section = configuration.GetSection(sectionName);
+        section.Bind(oauthOptions);
+        
+        if (!oauthOptions.IsValid())
+        {
+            throw new InvalidOperationException(
+                $"Invalid OAuth configuration found in '{sectionName}' section. " +
+                "Ensure ClientId, ClientSecret, and RedirectUri are properly configured.");
+        }
+        
+        return AddRoEFacturaWithOAuth(services, oauthOptions, configuration);
     }
 }
