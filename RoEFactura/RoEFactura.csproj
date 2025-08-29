@@ -10,6 +10,7 @@
     <Authors>Gabriel Ciuca-Albu</Authors>
     <Company>Rammer Tech</Company>
     <Description>A package aimed to easying how to interact with eFactura national invoicing system</Description>
+    <RepositoryUrl>https://github.com/Rammer-Tech/ro-efactura</RepositoryUrl>
   </PropertyGroup>
 
   <ItemGroup>
