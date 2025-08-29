@@ -1,5 +1,6 @@
 using FluentValidation;
 using UblSharp;
+using UblSharp.CommonAggregateComponents;
 
 
 namespace RoEFactura.Validation;
@@ -63,22 +64,22 @@ public class TotalsValidator : AbstractValidator<InvoiceType>
         if (invoice.InvoiceLine == null || invoice.LegalMonetaryTotal?.TaxExclusiveAmount?.Value == null)
             return true;
 
-        var lineSum = invoice.InvoiceLine.Sum(line => line.LineExtensionAmount?.Value ?? 0);
-        var docTotal = invoice.LegalMonetaryTotal.TaxExclusiveAmount.Value;
+        decimal lineSum = invoice.InvoiceLine.Sum(line => line.LineExtensionAmount?.Value ?? 0);
+        decimal docTotal = invoice.LegalMonetaryTotal.TaxExclusiveAmount.Value;
 
         return Math.Abs(lineSum - docTotal) <= 0.01m;
     }
 
     private static bool ValidateVatAmountCalculation(InvoiceType invoice)
     {
-        var totalWithoutVat = invoice.LegalMonetaryTotal?.TaxExclusiveAmount?.Value;
-        var totalWithVat = invoice.LegalMonetaryTotal?.TaxInclusiveAmount?.Value;
-        var vatTotal = invoice.TaxTotal?.FirstOrDefault()?.TaxAmount?.Value;
+        decimal? totalWithoutVat = invoice.LegalMonetaryTotal?.TaxExclusiveAmount?.Value;
+        decimal? totalWithVat = invoice.LegalMonetaryTotal?.TaxInclusiveAmount?.Value;
+        decimal? vatTotal = invoice.TaxTotal?.FirstOrDefault()?.TaxAmount?.Value;
 
         if (totalWithoutVat == null || totalWithVat == null)
             return true;
 
-        var expectedTotalWithVat = totalWithoutVat.Value + (vatTotal ?? 0);
+        decimal expectedTotalWithVat = totalWithoutVat.Value + (vatTotal ?? 0);
         return Math.Abs(totalWithVat.Value - expectedTotalWithVat) <= 0.01m;
     }
 
@@ -87,16 +88,16 @@ public class TotalsValidator : AbstractValidator<InvoiceType>
         if (invoice.TaxTotal?.FirstOrDefault()?.TaxSubtotal == null)
             return true;
 
-        foreach (var subtotal in invoice.TaxTotal.First().TaxSubtotal)
+        foreach (TaxSubtotalType? subtotal in invoice.TaxTotal.First().TaxSubtotal)
         {
-            var taxableAmount = subtotal.TaxableAmount?.Value;
-            var taxAmount = subtotal.TaxAmount?.Value;
-            var taxRate = subtotal.TaxCategory?.Percent?.Value;
+            decimal? taxableAmount = subtotal.TaxableAmount?.Value;
+            decimal? taxAmount = subtotal.TaxAmount?.Value;
+            decimal? taxRate = subtotal.TaxCategory?.Percent?.Value;
 
             if (taxableAmount == null || taxAmount == null || taxRate == null)
                 continue;
 
-            var expectedTaxAmount = Math.Round(taxableAmount.Value * taxRate.Value / 100, 2, MidpointRounding.AwayFromZero);
+            decimal expectedTaxAmount = Math.Round(taxableAmount.Value * taxRate.Value / 100, 2, MidpointRounding.AwayFromZero);
             if (Math.Abs(taxAmount.Value - expectedTaxAmount) > 0.01m)
                 return false;
         }
@@ -106,8 +107,8 @@ public class TotalsValidator : AbstractValidator<InvoiceType>
 
     private static bool ValidateVatTotalSum(InvoiceType invoice)
     {
-        var invoiceVatTotal = invoice.TaxTotal?.FirstOrDefault()?.TaxAmount?.Value;
-        var subtotalSum = invoice.TaxTotal?.FirstOrDefault()?.TaxSubtotal?
+        decimal? invoiceVatTotal = invoice.TaxTotal?.FirstOrDefault()?.TaxAmount?.Value;
+        decimal? subtotalSum = invoice.TaxTotal?.FirstOrDefault()?.TaxSubtotal?
             .Sum(st => st.TaxAmount?.Value ?? 0);
 
         if (invoiceVatTotal == null || subtotalSum == null)
@@ -123,12 +124,12 @@ public class TotalsValidator : AbstractValidator<InvoiceType>
 
     private static bool ValidateDocumentPeriod(InvoiceType invoice)
     {
-        var period = invoice.InvoicePeriod?.FirstOrDefault();
+        PeriodType? period = invoice.InvoicePeriod?.FirstOrDefault();
         if (period?.StartDate?.Value == null || period?.EndDate?.Value == null)
             return true;
 
-        if (!DateTime.TryParse(period.StartDate.Value.ToString(), out var startDate) ||
-            !DateTime.TryParse(period.EndDate.Value.ToString(), out var endDate))
+        if (!DateTime.TryParse(period.StartDate.Value.ToString(), out DateTime startDate) ||
+            !DateTime.TryParse(period.EndDate.Value.ToString(), out DateTime endDate))
             return true;
 
         return endDate >= startDate;

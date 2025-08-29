@@ -1,5 +1,6 @@
 using System.IO.Compression;
 using FluentValidation;
+using FluentValidation.Results;
 using Microsoft.Extensions.Logging;
 using RoEFactura.Extensions;
 using RoEFactura.Models;
@@ -32,7 +33,7 @@ internal class UblProcessingService : IUblProcessingService
             _logger.LogInformation("Starting UBL invoice processing");
 
             // 1. Parse UBL XML
-            var ublInvoice = UblSharpExtensions.LoadInvoiceFromXml(xmlContent);
+            InvoiceType? ublInvoice = UblSharpExtensions.LoadInvoiceFromXml(xmlContent);
             if (ublInvoice == null)
             {
                 _logger.LogError("Failed to parse UBL XML");
@@ -42,7 +43,7 @@ internal class UblProcessingService : IUblProcessingService
             _logger.LogInformation("UBL XML parsed successfully. Invoice: {InvoiceNumber}", ublInvoice.ID?.Value);
 
             // 2. Validate against RO_CIUS rules
-            var validationResult = await _ublValidator.ValidateAsync(ublInvoice);
+            ValidationResult? validationResult = await _ublValidator.ValidateAsync(ublInvoice);
             if (!validationResult.IsValid)
             {
                 _logger.LogWarning("UBL validation failed for invoice {InvoiceNumber}: {Errors}", 
@@ -72,15 +73,15 @@ internal class UblProcessingService : IUblProcessingService
             _logger.LogInformation("Converting invoice {InvoiceNumber} to UBL XML", ublInvoice.ID?.Value);
 
             // Validate the UBL before converting
-            var validationResult = await _ublValidator.ValidateAsync(ublInvoice);
+            ValidationResult? validationResult = await _ublValidator.ValidateAsync(ublInvoice);
             if (!validationResult.IsValid)
             {
-                var errors = string.Join(", ", validationResult.Errors.Select(e => e.ErrorMessage));
+                string errors = string.Join(", ", validationResult.Errors.Select(e => e.ErrorMessage));
                 throw new InvalidOperationException($"UBL invoice is invalid: {errors}");
             }
 
             // Convert to XML
-            var xmlContent = ublInvoice.SaveInvoiceToXml();
+            string xmlContent = ublInvoice.SaveInvoiceToXml();
 
             _logger.LogInformation("Successfully converted invoice {InvoiceNumber} to UBL XML", ublInvoice.ID?.Value);
 
@@ -103,14 +104,14 @@ internal class UblProcessingService : IUblProcessingService
             _logger.LogInformation("Validating UBL XML");
 
             // Parse UBL XML
-            var ublInvoice = UblSharpExtensions.LoadInvoiceFromXml(xmlContent);
+            InvoiceType? ublInvoice = UblSharpExtensions.LoadInvoiceFromXml(xmlContent);
             if (ublInvoice == null)
             {
                 return ProcessingResult<InvoiceType>.Failed("Failed to parse UBL XML content");
             }
 
             // Validate against RO_CIUS rules
-            var validationResult = await _ublValidator.ValidateAsync(ublInvoice);
+            ValidationResult? validationResult = await _ublValidator.ValidateAsync(ublInvoice);
             
             if (!validationResult.IsValid)
             {
@@ -133,11 +134,11 @@ internal class UblProcessingService : IUblProcessingService
     {
         try
         {
-            var xmlContent = System.Text.Encoding.UTF8.GetString(xmlData);
+            string xmlContent = System.Text.Encoding.UTF8.GetString(xmlData);
             _logger.LogInformation("Processing UBL XML file: {FileName}", fileName);
             
             UpdateStats(stats => stats.TotalProcessed++);
-            var result = await ProcessInvoiceAsync(xmlContent);
+            ProcessingResult<InvoiceType> result = await ProcessInvoiceAsync(xmlContent);
             
             if (result.IsSuccess)
             {
@@ -167,7 +168,7 @@ internal class UblProcessingService : IUblProcessingService
         {
             _logger.LogInformation("Validating invoice {InvoiceNumber}", invoice.ID?.Value);
             
-            var validationResult = await _ublValidator.ValidateAsync(invoice);
+            ValidationResult? validationResult = await _ublValidator.ValidateAsync(invoice);
             
             if (!validationResult.IsValid)
             {
@@ -196,11 +197,11 @@ internal class UblProcessingService : IUblProcessingService
         {
             _logger.LogInformation("Processing ZIP file: {FileName}", fileName);
             
-            using var stream = new MemoryStream(zipData);
-            using var archive = new ZipArchive(stream, ZipArchiveMode.Read);
+            using MemoryStream stream = new MemoryStream(zipData);
+            using ZipArchive archive = new ZipArchive(stream, ZipArchiveMode.Read);
 
             // Look for XML files in the archive
-            var xmlEntry = archive.Entries.FirstOrDefault(e => 
+            ZipArchiveEntry? xmlEntry = archive.Entries.FirstOrDefault(e => 
                 e.Name.EndsWith(".xml", StringComparison.OrdinalIgnoreCase));
 
             if (xmlEntry == null)
@@ -208,9 +209,9 @@ internal class UblProcessingService : IUblProcessingService
                 return ProcessingResult<InvoiceType>.Failed("No XML file found in ZIP archive");
             }
 
-            using var xmlStream = xmlEntry.Open();
-            using var reader = new StreamReader(xmlStream);
-            var xmlContent = await reader.ReadToEndAsync();
+            using Stream xmlStream = xmlEntry.Open();
+            using StreamReader reader = new StreamReader(xmlStream);
+            string xmlContent = await reader.ReadToEndAsync();
 
             _logger.LogInformation("Extracted XML from ZIP: {XmlFileName}", xmlEntry.Name);
             

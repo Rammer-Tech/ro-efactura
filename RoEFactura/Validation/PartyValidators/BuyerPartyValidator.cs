@@ -50,8 +50,8 @@ public class BuyerPartyValidator : AbstractValidator<CustomerPartyType>
         if (!IsRomanianParty(party))
             return true; // Only validate Romanian parties
 
-        var legalId = party.Party?.PartyLegalEntity?.FirstOrDefault()?.CompanyID?.Value;
-        var vatId = party.Party?.PartyTaxScheme?.FirstOrDefault()?.CompanyID?.Value;
+        string? legalId = party.Party?.PartyLegalEntity?.FirstOrDefault()?.CompanyID?.Value;
+        string? vatId = party.Party?.PartyTaxScheme?.FirstOrDefault()?.CompanyID?.Value;
 
         return !string.IsNullOrWhiteSpace(legalId) || !string.IsNullOrWhiteSpace(vatId);
     }

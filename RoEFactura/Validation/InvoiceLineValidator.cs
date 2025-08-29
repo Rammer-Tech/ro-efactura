@@ -98,12 +98,12 @@ public class InvoiceLineValidator : AbstractValidator<InvoiceLineType>
 
     private static bool ValidateLinePeriod(InvoiceLineType line)
     {
-        var period = line.InvoicePeriod?.FirstOrDefault();
+        PeriodType? period = line.InvoicePeriod?.FirstOrDefault();
         if (period?.StartDate?.Value == null || period?.EndDate?.Value == null)
             return true;
 
-        if (!DateTime.TryParse(period.StartDate.Value.ToString(), out var startDate) ||
-            !DateTime.TryParse(period.EndDate.Value.ToString(), out var endDate))
+        if (!DateTime.TryParse(period.StartDate.Value.ToString(), out DateTime startDate) ||
+            !DateTime.TryParse(period.EndDate.Value.ToString(), out DateTime endDate))
             return true;
 
         return endDate >= startDate;
@@ -141,7 +141,7 @@ public class InvoiceLineValidator : AbstractValidator<InvoiceLineType>
 
     private static bool HasNonNegativePriceAmount(InvoiceLineType line)
     {
-        var price = line?.Price?.PriceAmount?.Value;
+        decimal? price = line?.Price?.PriceAmount?.Value;
         return price >= 0;
     }
 
@@ -152,19 +152,19 @@ public class InvoiceLineValidator : AbstractValidator<InvoiceLineType>
 
     private static bool HasValidNoteLengthLimit(InvoiceLineType line)
     {
-        var note = line?.Note?.FirstOrDefault()?.Value;
+        string? note = line?.Note?.FirstOrDefault()?.Value;
         return string.IsNullOrEmpty(note) || note.Length <= 300;
     }
 
     private static bool HasValidItemNameLengthLimit(InvoiceLineType line)
     {
-        var name = line?.Item?.Name?.Value;
+        string? name = line?.Item?.Name?.Value;
         return string.IsNullOrEmpty(name) || name.Length <= 200;
     }
 
     private static bool HasValidItemDescriptionLengthLimit(InvoiceLineType line)
     {
-        var description = line?.Item?.Description?.FirstOrDefault()?.Value;
+        string? description = line?.Item?.Description?.FirstOrDefault()?.Value;
         return string.IsNullOrEmpty(description) || description.Length <= 200;
     }
 }

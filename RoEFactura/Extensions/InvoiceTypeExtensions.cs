@@ -20,12 +20,12 @@ public static partial class InvoiceTypeExtensions
             return true;
 
         // Check seller country
-        var sellerCountry = invoice.AccountingSupplierParty?.Party?.PostalAddress?.Country?.IdentificationCode?.Value;
+        string? sellerCountry = invoice.AccountingSupplierParty?.Party?.PostalAddress?.Country?.IdentificationCode?.Value;
         if (sellerCountry == "RO")
             return true;
 
         // Check buyer country
-        var buyerCountry = invoice.AccountingCustomerParty?.Party?.PostalAddress?.Country?.IdentificationCode?.Value;
+        string? buyerCountry = invoice.AccountingCustomerParty?.Party?.PostalAddress?.Country?.IdentificationCode?.Value;
         if (buyerCountry == "RO")
             return true;
 
@@ -55,7 +55,7 @@ public static partial class InvoiceTypeExtensions
     {
         if (invoice == null) return "Invalid invoice";
 
-        var summary = new List<string>();
+        List<string> summary = new List<string>();
 
         // Basic validation
         if (string.IsNullOrEmpty(invoice.ID?.Value))
@@ -88,7 +88,7 @@ public static partial class InvoiceTypeExtensions
             if (invoice.CustomizationID?.Value != RomanianConstants.RoCiusCustomizationId)
                 summary.Add("Missing RO_CIUS customization ID");
 
-            var invoiceNumber = invoice.ID?.Value ?? "";
+            string invoiceNumber = invoice.ID?.Value ?? "";
             if (!System.Text.RegularExpressions.Regex.IsMatch(invoiceNumber, @"\d"))
                 summary.Add("Invoice number must contain at least one digit (RO requirement)");
         }

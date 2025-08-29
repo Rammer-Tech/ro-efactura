@@ -289,9 +289,9 @@ internal class AnafEInvoiceClient : IAnafEInvoiceClient
             // Note: Check for existing invoice would be handled at repository level
 
             // Create temporary directories
-            var tempPath = Path.Combine(Path.GetTempPath(), "anaf_invoices", Guid.NewGuid().ToString());
-            var zipPath = Path.Combine(tempPath, "downloads");
-            var extractPath = Path.Combine(tempPath, "extracted");
+            string tempPath = Path.Combine(Path.GetTempPath(), "anaf_invoices", Guid.NewGuid().ToString());
+            string zipPath = Path.Combine(tempPath, "downloads");
+            string extractPath = Path.Combine(tempPath, "extracted");
 
             try
             {
@@ -299,7 +299,7 @@ internal class AnafEInvoiceClient : IAnafEInvoiceClient
                 await DownloadEInvoiceAsync(token, zipPath, extractPath, eInvoiceDownloadId);
 
                 // Find XML files in extracted directory
-                var xmlFiles = Directory.GetFiles(extractPath, "*.xml", SearchOption.AllDirectories);
+                string[] xmlFiles = Directory.GetFiles(extractPath, "*.xml", SearchOption.AllDirectories);
                 
                 if (!xmlFiles.Any())
                 {
@@ -308,12 +308,12 @@ internal class AnafEInvoiceClient : IAnafEInvoiceClient
                 }
 
                 // Process the first XML file (assuming one invoice per download)
-                var xmlFile = xmlFiles.First();
-                var xmlContent = await File.ReadAllTextAsync(xmlFile);
+                string xmlFile = xmlFiles.First();
+                string xmlContent = await File.ReadAllTextAsync(xmlFile);
 
                 // Process through UBL pipeline
-                var xmlBytes = System.Text.Encoding.UTF8.GetBytes(xmlContent);
-                var result = await _ublProcessingService.ProcessInvoiceXmlAsync(xmlBytes, eInvoiceDownloadId);
+                byte[] xmlBytes = System.Text.Encoding.UTF8.GetBytes(xmlContent);
+                ProcessingResult<InvoiceType> result = await _ublProcessingService.ProcessInvoiceXmlAsync(xmlBytes, eInvoiceDownloadId);
 
                 if (result.IsSuccess && result.Data != null)
                 {
@@ -358,13 +358,13 @@ internal class AnafEInvoiceClient : IAnafEInvoiceClient
             _logger.LogInformation("Validating invoice XML content");
 
             // Parse XML content to create an invoice object first
-            var ublInvoice = UblSharpExtensions.LoadInvoiceFromXml(xmlContent);
+            InvoiceType? ublInvoice = UblSharpExtensions.LoadInvoiceFromXml(xmlContent);
             if (ublInvoice == null)
             {
                 return ProcessingResult<InvoiceType>.Failed("Failed to parse UBL XML content");
             }
             
-            var result = await _ublProcessingService.ValidateInvoiceAsync(ublInvoice);
+            ProcessingResult<InvoiceType> result = await _ublProcessingService.ValidateInvoiceAsync(ublInvoice);
 
             if (result.IsSuccess)
             {
@@ -393,18 +393,18 @@ internal class AnafEInvoiceClient : IAnafEInvoiceClient
         IEnumerable<string> eInvoiceDownloadIds)
     {
         token = Guard.Against.NullOrWhiteSpace(token);
-        var invoiceDownloadIds = eInvoiceDownloadIds.ToList();
+        List<string> invoiceDownloadIds = eInvoiceDownloadIds.ToList();
         Guard.Against.Null(invoiceDownloadIds);
 
-        var results = new List<ProcessingResult<InvoiceType>>();
+        List<ProcessingResult<InvoiceType>> results = new List<ProcessingResult<InvoiceType>>();
 
         _logger.LogInformation("Processing {Count} invoices in batch", invoiceDownloadIds.Count());
 
-        foreach (var downloadId in invoiceDownloadIds)
+        foreach (string downloadId in invoiceDownloadIds)
         {
             try
             {
-                var result = await ProcessDownloadedInvoiceAsync(token, downloadId);
+                ProcessingResult<InvoiceType> result = await ProcessDownloadedInvoiceAsync(token, downloadId);
                 results.Add(result);
 
                 if (result.IsSuccess)
@@ -424,7 +424,7 @@ internal class AnafEInvoiceClient : IAnafEInvoiceClient
             }
         }
 
-        var successCount = results.Count(r => r.IsSuccess);
+        int successCount = results.Count(r => r.IsSuccess);
         _logger.LogInformation("Batch processing completed: {Success}/{Total} invoices processed successfully", 
             successCount, results.Count);
 

@@ -1,4 +1,6 @@
-﻿using System.Net.Http.Headers;
+﻿using System.Net;
+using System.Net.Http.Headers;
+using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json;
@@ -10,7 +12,7 @@ internal class AnafOAuthClient : IAnafOAuthClient
 {
     private readonly IHttpClientFactory _httpClientFactory;
     private static X509Certificate2? _cachedCertificate;
-    private static readonly object _certificateLock = new();
+    private static readonly Lock CertificateLock = new Lock();
 
     public AnafOAuthClient(IHttpClientFactory httpClientFactory)
     {
@@ -19,7 +21,7 @@ internal class AnafOAuthClient : IAnafOAuthClient
 
     public async Task<Token> GetAccessTokenAsync(string clientId, string clientSecret, string callbackUrl)
     {
-        var certificate = GetCachedCertificate();
+        X509Certificate2 certificate = GetCachedCertificate();
         using HttpClient client = CreateClientWithCertificate(certificate);
 
         return await GetJwtTokenAsync(clientId, clientSecret, callbackUrl, client);
@@ -48,8 +50,8 @@ internal class AnafOAuthClient : IAnafOAuthClient
         if (response.RequestMessage?.RequestUri?.Query == null ||
             !response.RequestMessage.RequestUri.Query.Contains("code="))
         {
-            var actualUri = response.RequestMessage?.RequestUri?.ToString() ?? "Unknown";
-            var statusCode = response.StatusCode;
+            string actualUri = response.RequestMessage?.RequestUri?.ToString() ?? "Unknown";
+            HttpStatusCode statusCode = response.StatusCode;
             throw new InvalidOperationException(
                 $"ANAF OAuth authorization failed. Expected authorization code in callback URL but received: {actualUri}. " +
                 $"HTTP Status: {statusCode}. This may indicate certificate authentication failure or invalid OAuth parameters.");
@@ -70,7 +72,7 @@ internal class AnafOAuthClient : IAnafOAuthClient
 
         if (!resultContent.Contains("access_token"))
         {
-            var statusCode = response.StatusCode;
+            HttpStatusCode statusCode = response.StatusCode;
             throw new InvalidOperationException(
                 $"ANAF OAuth token exchange failed. HTTP Status: {statusCode}. " +
                 $"Response: {resultContent}. " +
@@ -86,14 +88,14 @@ internal class AnafOAuthClient : IAnafOAuthClient
     /// </summary>
     private HttpClient CreateClientWithCertificate(X509Certificate2 certificate)
     {
-        var handler = new HttpClientHandler
+        HttpClientHandler handler = new HttpClientHandler
         {
             ClientCertificateOptions = ClientCertificateOption.Manual,
             UseProxy = false,
             ClientCertificates = { certificate }
         };
 
-        var client = new HttpClient(handler);
+        HttpClient client = new HttpClient(handler);
         
         // Set default timeout and headers similar to IHttpClientFactory defaults
         client.Timeout = TimeSpan.FromSeconds(100);
@@ -165,7 +167,7 @@ internal class AnafOAuthClient : IAnafOAuthClient
             X509Certificate2Collection validCertificates =
                 store.Certificates.Find(X509FindType.FindByTimeValid, DateTime.Now, validOnly: false);
 
-            var romanianCertificates = new List<CertificateInfo>();
+            List<CertificateInfo> romanianCertificates = new List<CertificateInfo>();
 
             foreach (X509Certificate2 cert in validCertificates)
             {
@@ -210,7 +212,7 @@ internal class AnafOAuthClient : IAnafOAuthClient
     /// </summary>
     private static X509Certificate2 GetCachedCertificate()
     {
-        lock (_certificateLock)
+        lock (CertificateLock)
         {
             // Return cached certificate if valid
             if (_cachedCertificate != null && 
@@ -230,7 +232,7 @@ internal class AnafOAuthClient : IAnafOAuthClient
     /// </summary>
     public static void ClearCertificateCache()
     {
-        lock (_certificateLock)
+        lock (CertificateLock)
         {
             _cachedCertificate?.Dispose();
             _cachedCertificate = null;
@@ -247,7 +249,7 @@ internal class AnafOAuthClient : IAnafOAuthClient
 
         try
         {
-            var found = store.Certificates.Find(X509FindType.FindByThumbprint, thumbprint, validOnly: false);
+            X509Certificate2Collection found = store.Certificates.Find(X509FindType.FindByThumbprint, thumbprint, validOnly: false);
             return found.Count > 0 ? found[0] : null;
         }
         finally
@@ -261,7 +263,7 @@ internal class AnafOAuthClient : IAnafOAuthClient
     /// </summary>
     public async Task<Token> GetAccessTokenAsync(string thumbprint, string clientId, string clientSecret, string callbackUrl)
     {
-        var certificate = GetCertificateByThumbprint(thumbprint);
+        X509Certificate2? certificate = GetCertificateByThumbprint(thumbprint);
         if (certificate == null)
         {
             throw new InvalidOperationException($"Certificate with thumbprint '{thumbprint}' not found in certificate store.");
@@ -284,16 +286,16 @@ internal class AnafOAuthClient : IAnafOAuthClient
             }
 
             // Check Enhanced Key Usage extension for Client Authentication
-            var extensions = certificate.Extensions;
+            X509ExtensionCollection extensions = certificate.Extensions;
             foreach (X509Extension extension in extensions)
             {
                 if (extension.Oid?.Value == "2.5.29.37") // Enhanced Key Usage OID
                 {
-                    var eku = extension as X509EnhancedKeyUsageExtension;
+                    X509EnhancedKeyUsageExtension? eku = extension as X509EnhancedKeyUsageExtension;
                     if (eku != null)
                     {
                         // Check for Client Authentication OID (1.3.6.1.5.5.7.3.2)
-                        foreach (var oid in eku.EnhancedKeyUsages)
+                        foreach (Oid oid in eku.EnhancedKeyUsages)
                         {
                             if (oid.Value == "1.3.6.1.5.5.7.3.2") // Client Authentication
                             {
@@ -309,7 +311,7 @@ internal class AnafOAuthClient : IAnafOAuthClient
             {
                 if (extension.Oid?.Value == "2.5.29.15") // Key Usage OID
                 {
-                    var ku = extension as X509KeyUsageExtension;
+                    X509KeyUsageExtension? ku = extension as X509KeyUsageExtension;
                     if (ku != null)
                     {
                         // Digital Signature and Key Encipherment are required for client auth
@@ -336,12 +338,12 @@ internal class AnafOAuthClient : IAnafOAuthClient
     /// </summary>
     public string GenerateAuthorizationUrl(string clientId, string redirectUri, string? state = null)
     {
-        var authorizeUrl = "https://logincert.anaf.ro/anaf-oauth2/v1/authorize";
+        string authorizeUrl = "https://logincert.anaf.ro/anaf-oauth2/v1/authorize";
         
-        var url = $"{authorizeUrl}?" +
-            $"response_type=code&" +
-            $"client_id={Uri.EscapeDataString(clientId)}&" +
-            $"redirect_uri={Uri.EscapeDataString(redirectUri)}";
+        string url = $"{authorizeUrl}?" +
+                     $"response_type=code&" +
+                     $"client_id={Uri.EscapeDataString(clientId)}&" +
+                     $"redirect_uri={Uri.EscapeDataString(redirectUri)}";
         
         if (!string.IsNullOrEmpty(state))
         {
@@ -364,10 +366,10 @@ internal class AnafOAuthClient : IAnafOAuthClient
             throw new ArgumentException("Invalid OAuth options provided");
         }
         
-        var url = $"{options.AuthorizeUrl}?" +
-            $"response_type=code&" +
-            $"client_id={Uri.EscapeDataString(options.ClientId)}&" +
-            $"redirect_uri={Uri.EscapeDataString(options.RedirectUri)}";
+        string url = $"{options.AuthorizeUrl}?" +
+                     $"response_type=code&" +
+                     $"client_id={Uri.EscapeDataString(options.ClientId)}&" +
+                     $"redirect_uri={Uri.EscapeDataString(options.RedirectUri)}";
         
         if (!string.IsNullOrEmpty(state))
         {
@@ -387,24 +389,24 @@ internal class AnafOAuthClient : IAnafOAuthClient
     /// </summary>
     public async Task<Token> ExchangeAuthorizationCodeAsync(string code, string clientId, string clientSecret, string redirectUri)
     {
-        var tokenUrl = "https://logincert.anaf.ro/anaf-oauth2/v1/token";
+        string tokenUrl = "https://logincert.anaf.ro/anaf-oauth2/v1/token";
         
-        using var client = _httpClientFactory.CreateClient();
+        using HttpClient client = _httpClientFactory.CreateClient();
         
         // Use Basic authentication header (following the working implementation)
-        var authValue = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{clientId}:{clientSecret}"));
+        string authValue = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{clientId}:{clientSecret}"));
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", authValue);
         
         // Prepare form-urlencoded body
-        var formData = $"grant_type=authorization_code&" +
-            $"code={Uri.EscapeDataString(code)}&" +
-            $"redirect_uri={Uri.EscapeDataString(redirectUri)}&" +
-            $"token_content_type=jwt";
+        string formData = $"grant_type=authorization_code&" +
+                          $"code={Uri.EscapeDataString(code)}&" +
+                          $"redirect_uri={Uri.EscapeDataString(redirectUri)}&" +
+                          $"token_content_type=jwt";
         
-        var content = new StringContent(formData, Encoding.UTF8, "application/x-www-form-urlencoded");
+        StringContent content = new StringContent(formData, Encoding.UTF8, "application/x-www-form-urlencoded");
         
-        var response = await client.PostAsync(tokenUrl, content);
-        var responseContent = await response.Content.ReadAsStringAsync();
+        HttpResponseMessage response = await client.PostAsync(tokenUrl, content);
+        string responseContent = await response.Content.ReadAsStringAsync();
         
         if (!response.IsSuccessStatusCode)
         {
@@ -414,12 +416,12 @@ internal class AnafOAuthClient : IAnafOAuthClient
         }
         
         // Parse the response
-        var options = new JsonSerializerOptions
+        JsonSerializerOptions options = new JsonSerializerOptions
         {
             PropertyNameCaseInsensitive = true
         };
         
-        var tokenResponse = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(responseContent, options);
+        Dictionary<string, JsonElement>? tokenResponse = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(responseContent, options);
         
         if (tokenResponse == null || !tokenResponse.ContainsKey("access_token"))
         {
@@ -450,26 +452,26 @@ internal class AnafOAuthClient : IAnafOAuthClient
             throw new ArgumentException("Invalid OAuth options provided");
         }
         
-        using var client = _httpClientFactory.CreateClient();
+        using HttpClient client = _httpClientFactory.CreateClient();
         
         // Use Basic authentication header
-        var authValue = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{options.ClientId}:{options.ClientSecret}"));
+        string authValue = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{options.ClientId}:{options.ClientSecret}"));
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", authValue);
         
         // Prepare form-urlencoded body
-        var formData = $"grant_type=authorization_code&" +
-            $"code={Uri.EscapeDataString(code)}&" +
-            $"redirect_uri={Uri.EscapeDataString(options.RedirectUri)}";
+        string formData = $"grant_type=authorization_code&" +
+                          $"code={Uri.EscapeDataString(code)}&" +
+                          $"redirect_uri={Uri.EscapeDataString(options.RedirectUri)}";
         
         if (options.IncludeTokenContentType)
         {
             formData += "&token_content_type=jwt";
         }
         
-        var content = new StringContent(formData, Encoding.UTF8, "application/x-www-form-urlencoded");
+        StringContent content = new StringContent(formData, Encoding.UTF8, "application/x-www-form-urlencoded");
         
-        var response = await client.PostAsync(options.TokenUrl, content);
-        var responseContent = await response.Content.ReadAsStringAsync();
+        HttpResponseMessage response = await client.PostAsync(options.TokenUrl, content);
+        string responseContent = await response.Content.ReadAsStringAsync();
         
         if (!response.IsSuccessStatusCode)
         {
@@ -479,12 +481,12 @@ internal class AnafOAuthClient : IAnafOAuthClient
         }
         
         // Parse the response
-        var jsonOptions = new JsonSerializerOptions
+        JsonSerializerOptions jsonOptions = new JsonSerializerOptions
         {
             PropertyNameCaseInsensitive = true
         };
         
-        var tokenResponse = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(responseContent, jsonOptions);
+        Dictionary<string, JsonElement>? tokenResponse = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(responseContent, jsonOptions);
         
         if (tokenResponse == null || !tokenResponse.ContainsKey("access_token"))
         {

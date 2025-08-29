@@ -139,7 +139,7 @@ public class RoCiusUblValidator : AbstractValidator<InvoiceType>
     {
         if (!value.HasValue) return true;
         
-        var decimalPlaces = BitConverter.GetBytes(decimal.GetBits(value.Value)[3])[2];
+        byte decimalPlaces = BitConverter.GetBytes(decimal.GetBits(value.Value)[3])[2];
         return decimalPlaces <= 2;
     }
 
@@ -150,13 +150,13 @@ public class RoCiusUblValidator : AbstractValidator<InvoiceType>
 
     private static bool HasValidInvoiceNumber(InvoiceType invoice)
     {
-        var invoiceNumber = invoice?.ID?.Value;
+        string? invoiceNumber = invoice?.ID?.Value;
         return ContainsDigit(invoiceNumber);
     }
 
     private static bool HasValidInvoiceTypeCode(InvoiceType invoice)
     {
-        var code = invoice?.InvoiceTypeCode?.Value ?? "";
+        string code = invoice?.InvoiceTypeCode?.Value ?? "";
         return RomanianConstants.ValidInvoiceTypeCodes.Contains(code);
     }
 

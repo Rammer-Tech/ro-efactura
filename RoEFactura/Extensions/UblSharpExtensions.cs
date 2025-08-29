@@ -19,11 +19,11 @@ public static partial class UblSharpExtensions
 
         try
         {
-            var serializer = new XmlSerializer(typeof(InvoiceType));
-            using var stringReader = new StringReader(xmlContent);
-            using var xmlReader = XmlReader.Create(stringReader);
+            XmlSerializer serializer = new XmlSerializer(typeof(InvoiceType));
+            using StringReader stringReader = new StringReader(xmlContent);
+            using XmlReader xmlReader = XmlReader.Create(stringReader);
             
-            var invoice = serializer.Deserialize(xmlReader) as InvoiceType;
+            InvoiceType? invoice = serializer.Deserialize(xmlReader) as InvoiceType;
             return invoice;
         }
         catch (Exception)
@@ -42,9 +42,9 @@ public static partial class UblSharpExtensions
 
         try
         {
-            var serializer = new XmlSerializer(typeof(InvoiceType));
-            using var stringWriter = new StringWriter();
-            using var xmlWriter = XmlWriter.Create(stringWriter, new XmlWriterSettings
+            XmlSerializer serializer = new XmlSerializer(typeof(InvoiceType));
+            using StringWriter stringWriter = new StringWriter();
+            using XmlWriter xmlWriter = XmlWriter.Create(stringWriter, new XmlWriterSettings
             {
                 Indent = true,
                 IndentChars = "  ",
@@ -53,7 +53,7 @@ public static partial class UblSharpExtensions
             });
 
             // Add UBL namespaces
-            var namespaces = new XmlSerializerNamespaces();
+            XmlSerializerNamespaces namespaces = new XmlSerializerNamespaces();
             namespaces.Add("", "urn:oasis:names:specification:ubl:schema:xsd:Invoice-2");
             namespaces.Add("cac", "urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2");
             namespaces.Add("cbc", "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2");

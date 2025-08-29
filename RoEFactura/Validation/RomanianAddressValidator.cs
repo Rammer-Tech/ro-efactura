@@ -53,13 +53,13 @@ public class RomanianAddressValidator : AbstractValidator<AddressType>
 
     private static bool HasValidRomanianCounty(AddressType address)
     {
-        var countyCode = address?.CountrySubentity?.Value;
+        string? countyCode = address?.CountrySubentity?.Value;
         return BeValidRomanianCounty(countyCode);
     }
 
     private static bool HasValidBucharestSector(AddressType address)
     {
-        var city = address?.CityName?.Value ?? "";
+        string city = address?.CityName?.Value ?? "";
         return BucharestSectorRegex.IsMatch(city);
     }
 

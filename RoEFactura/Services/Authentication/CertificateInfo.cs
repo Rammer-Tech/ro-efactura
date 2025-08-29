@@ -70,8 +70,8 @@ public class CertificateInfo
     private static string ExtractCommonName(string subject)
     {
         // Extract CN (Common Name) from subject
-        var parts = subject.Split(',');
-        var cnPart = parts.FirstOrDefault(p => p.Trim().StartsWith("CN="));
+        string[] parts = subject.Split(',');
+        string? cnPart = parts.FirstOrDefault(p => p.Trim().StartsWith("CN="));
         return cnPart?.Substring(3).Trim() ?? "Unknown";
     }
 
@@ -85,8 +85,8 @@ public class CertificateInfo
         if (issuer.Contains("TRAN")) return "TransSigne";
         
         // Fallback: extract O (Organization) from issuer
-        var parts = issuer.Split(',');
-        var oPart = parts.FirstOrDefault(p => p.Trim().StartsWith("O="));
+        string[] parts = issuer.Split(',');
+        string? oPart = parts.FirstOrDefault(p => p.Trim().StartsWith("O="));
         return oPart?.Substring(2).Trim() ?? "Unknown CA";
     }
 }

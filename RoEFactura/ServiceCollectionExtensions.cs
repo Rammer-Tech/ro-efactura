@@ -91,8 +91,8 @@ public static class ServiceCollectionExtensions
         }
         
         // Bind OAuth options from configuration
-        var oauthOptions = new AnafOAuthOptions();
-        var section = configuration.GetSection(sectionName);
+        AnafOAuthOptions oauthOptions = new AnafOAuthOptions();
+        IConfigurationSection section = configuration.GetSection(sectionName);
         section.Bind(oauthOptions);
         
         if (!oauthOptions.IsValid())
