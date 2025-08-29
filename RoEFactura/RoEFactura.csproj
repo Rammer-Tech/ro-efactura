@@ -4,6 +4,12 @@
     <TargetFramework>net9.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+
+    <PackageId>Ro eFactura</PackageId>
+    <Version>1.0.1</Version>
+    <Authors>Gabriel Ciuca-Albu</Authors>
+    <Company>Rammer Tech</Company>
+    <Description>A package aimed to easying how to interact with eFactura national invoicing system</Description>
   </PropertyGroup>
 
   <ItemGroup>

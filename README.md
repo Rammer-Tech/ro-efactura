@@ -16,6 +16,21 @@
   - Download invoices as ZIP files
   - Validate XML invoices
   - Upload XML invoices
+- **UBL 2.1 Document Processing**
+  - 📄 Complete UBL 2.1 XML parsing and manipulation
+  - 🏗️ ZIP archive extraction and processing
+  - 🔄 Batch processing of multiple invoices
+  - 📊 Processing statistics and monitoring
+- **Romanian RO_CIUS Compliance**
+  - ✅ Complete EN 16931 + RO_CIUS validation engine
+  - 🇷🇴 All Romanian business rules (BR-RO-*) implemented
+  - 🏛️ County code and address validation (including Bucharest sectors)
+  - 💰 Currency and VAT validation for Romanian requirements
+- **Advanced Invoice Processing**
+  - 🔍 Romanian invoice auto-detection
+  - 📈 Totals calculation and validation
+  - 🛡️ Invoice validation summaries with detailed error reporting
+  - 📋 Rich invoice analysis capabilities
 - **Romanian Certificate Auto-Discovery**
   - Supports CERTSIGN, DIGISIGN, ALFASIGN, CERTDIGITAL
   - Automatic certificate validation
@@ -23,6 +38,7 @@
   - Comprehensive error handling
   - Logging integration
   - Configurable environments
+  - Thread-safe processing statistics
 
 ---
 
@@ -341,6 +357,269 @@ services.AddRoEFacturaWithOAuth(new AnafOAuthOptions
     ClientSecret = Environment.GetEnvironmentVariable("ANAF_CLIENT_SECRET"),
     RedirectUri = Environment.GetEnvironmentVariable("ANAF_REDIRECT_URI")
 });
+```
+
+---
+
+## 📄 UBL Processing & Validation
+
+RoEFactura provides comprehensive UBL 2.1 document processing with full Romanian RO_CIUS validation support.
+
+### Processing Downloaded Invoices
+
+```csharp
+using RoEFactura.Services.Api;
+using RoEFactura.Services.Authentication;
+
+public class UblProcessingExample
+{
+    private readonly IAnafEInvoiceClient _invoiceClient;
+    private readonly IAnafOAuthClient _authClient;
+
+    public async Task ProcessInvoicesAsync()
+    {
+        // 1. Get authenticated token
+        var token = await _authClient.GetAccessTokenAsync(clientId, clientSecret, callbackUrl);
+
+        // 2. List available invoices
+        var invoices = await _invoiceClient.ListEInvoicesAsync(token.AccessToken, 30, cui);
+        
+        foreach (var invoice in invoices)
+        {
+            try
+            {
+                // 3. Download and process invoice with UBL validation
+                var result = await _invoiceClient.ProcessDownloadedInvoiceAsync(
+                    token.AccessToken, 
+                    invoice.Id
+                );
+
+                if (result.IsSuccess)
+                {
+                    var ublInvoice = result.Data; // UblSharp.InvoiceType
+                    
+                    // 4. Use rich invoice analysis
+                    var isRomanian = ublInvoice.IsRomanianInvoice();
+                    var currency = ublInvoice.GetCurrencyCode();
+                    var totalDue = ublInvoice.GetTotalAmountDue();
+                    var totalWithoutVat = ublInvoice.GetTotalWithoutVat();
+                    var totalWithVat = ublInvoice.GetTotalWithVat();
+                    var validationSummary = ublInvoice.GetValidationSummary();
+
+                    Console.WriteLine($"Invoice: {ublInvoice.ID?.Value}");
+                    Console.WriteLine($"Romanian Invoice: {isRomanian}");
+                    Console.WriteLine($"Currency: {currency}");
+                    Console.WriteLine($"Total Due: {totalDue:C}");
+                    Console.WriteLine($"Validation: {validationSummary}");
+                }
+                else
+                {
+                    // 5. Handle validation errors
+                    Console.WriteLine($"Validation failed for invoice {invoice.Id}:");
+                    foreach (var error in result.Errors)
+                    {
+                        Console.WriteLine($"  - {error.PropertyName}: {error.ErrorMessage}");
+                        if (error.ErrorCode.StartsWith("BR-RO-"))
+                        {
+                            Console.WriteLine($"    Romanian Rule: {error.ErrorCode}");
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error processing invoice {invoice.Id}: {ex.Message}");
+            }
+        }
+    }
+}
+```
+
+### Batch Processing
+
+```csharp
+public async Task BatchProcessInvoicesAsync()
+{
+    var token = await _authClient.GetAccessTokenAsync(clientId, clientSecret, callbackUrl);
+    
+    // Get invoice IDs to process
+    var invoiceIds = new[] { "downloadId1", "downloadId2", "downloadId3" };
+    
+    // Process multiple invoices in batch
+    var results = await _invoiceClient.ProcessMultipleInvoicesAsync(
+        token.AccessToken, 
+        invoiceIds
+    );
+    
+    foreach (var result in results)
+    {
+        if (result.IsSuccess)
+        {
+            var invoice = result.Data;
+            Console.WriteLine($"✅ Successfully processed: {invoice.ID?.Value}");
+            
+            // Check if it's a Romanian invoice and get analysis
+            if (invoice.IsRomanianInvoice())
+            {
+                Console.WriteLine($"🇷🇴 Romanian invoice - Total: {invoice.GetTotalAmountDue():C}");
+            }
+        }
+        else
+        {
+            Console.WriteLine($"❌ Processing failed:");
+            foreach (var error in result.Errors)
+            {
+                Console.WriteLine($"   {error.ErrorCode}: {error.ErrorMessage}");
+            }
+        }
+    }
+}
+```
+
+### Custom XML Validation
+
+```csharp
+using RoEFactura.Extensions;
+
+public async Task ValidateCustomXmlAsync()
+{
+    // Load XML content from file or string
+    var xmlContent = await File.ReadAllTextAsync("invoice.xml");
+    
+    // Validate against Romanian RO_CIUS rules
+    var validationResult = await _invoiceClient.ValidateInvoiceXmlAsync(xmlContent);
+    
+    if (validationResult.IsSuccess)
+    {
+        var invoice = validationResult.Data;
+        
+        // Romanian-specific validation passed
+        Console.WriteLine("✅ RO_CIUS validation successful!");
+        
+        // Get detailed validation summary
+        var summary = invoice.GetValidationSummary();
+        Console.WriteLine($"Summary: {summary}");
+        
+        // Check specific Romanian requirements
+        var customizationId = invoice.CustomizationID?.Value;
+        var isCorrectCius = customizationId == 
+            "urn:cen.eu:en16931:2017#compliant#urn:efactura.mfinante.ro:RO_CIUS:1.0.0.2021";
+        
+        Console.WriteLine($"Correct RO_CIUS ID: {isCorrectCius}");
+    }
+    else
+    {
+        Console.WriteLine("❌ Validation errors:");
+        
+        // Group errors by type
+        var romanianErrors = validationResult.Errors
+            .Where(e => e.ErrorCode.StartsWith("BR-RO-"))
+            .ToList();
+            
+        var standardErrors = validationResult.Errors
+            .Where(e => !e.ErrorCode.StartsWith("BR-RO-"))
+            .ToList();
+        
+        if (romanianErrors.Any())
+        {
+            Console.WriteLine("\n🇷🇴 Romanian RO_CIUS Violations:");
+            foreach (var error in romanianErrors)
+            {
+                Console.WriteLine($"  {error.ErrorCode}: {error.ErrorMessage}");
+                Console.WriteLine($"    Field: {error.PropertyName}");
+            }
+        }
+        
+        if (standardErrors.Any())
+        {
+            Console.WriteLine("\n📋 EN 16931 Standard Violations:");
+            foreach (var error in standardErrors)
+            {
+                Console.WriteLine($"  {error.ErrorCode}: {error.ErrorMessage}");
+            }
+        }
+    }
+}
+```
+
+### Processing Statistics
+
+```csharp
+using RoEFactura.Services.Processing;
+
+public class ProcessingStatsExample
+{
+    private readonly IUblProcessingService _processingService;
+    
+    public void MonitorProcessingStats()
+    {
+        // Get current processing statistics
+        var stats = _processingService.GetProcessingStats();
+        
+        Console.WriteLine("📊 Processing Statistics:");
+        Console.WriteLine($"  Total Processed: {stats.TotalProcessed}");
+        Console.WriteLine($"  Successfully Processed: {stats.SuccessfullyProcessed}");
+        Console.WriteLine($"  Failed Processing: {stats.FailedProcessing}");
+        Console.WriteLine($"  Romanian Invoices: {stats.RomanianInvoicesCount}");
+        Console.WriteLine($"  Average Processing Time: {stats.AverageProcessingTime:F2}ms");
+        
+        // Reset statistics if needed
+        _processingService.ResetProcessingStats();
+    }
+}
+```
+
+### Romanian Validation Rules
+
+RoEFactura implements all Romanian RO_CIUS business rules:
+
+#### Key Romanian Rules (BR-RO-*)
+- **BR-RO-010**: Invoice number must contain at least one digit
+- **BR-RO-020**: Invoice type must be one of: 380, 389, 384, 381, 751
+- **BR-RO-120**: Romanian buyers must have CUI/CIF identification
+- **BR-RO-130**: Enforcement seizure requires specific payee information
+- **Length Limits**: All Romanian field length restrictions enforced
+- **Currency Rules**: Non-RON invoices must have RON as VAT currency
+- **Address Validation**: Romanian county codes (ISO 3166-2:RO) and Bucharest sectors
+
+#### Example: Checking Romanian Compliance
+
+```csharp
+public void CheckRomanianCompliance(InvoiceType invoice)
+{
+    // Check if it's a Romanian invoice
+    if (!invoice.IsRomanianInvoice())
+    {
+        Console.WriteLine("Not a Romanian invoice");
+        return;
+    }
+    
+    // Check customization ID
+    var expectedCiusId = "urn:cen.eu:en16931:2017#compliant#urn:efactura.mfinante.ro:RO_CIUS:1.0.0.2021";
+    var actualCiusId = invoice.CustomizationID?.Value;
+    var hasCorrectCius = actualCiusId == expectedCiusId;
+    
+    Console.WriteLine($"RO_CIUS Compliant: {hasCorrectCius}");
+    
+    // Check invoice number digit requirement
+    var invoiceNumber = invoice.ID?.Value ?? "";
+    var hasDigit = invoiceNumber.Any(char.IsDigit);
+    
+    Console.WriteLine($"Invoice number has digit (BR-RO-010): {hasDigit}");
+    
+    // Check currency rules
+    var docCurrency = invoice.GetCurrencyCode();
+    var vatCurrency = invoice.TaxCurrencyCode?.Value;
+    
+    if (docCurrency != "RON" && vatCurrency != "RON")
+    {
+        Console.WriteLine("⚠️  Warning: Non-RON invoice should have RON as VAT currency");
+    }
+    
+    // Get detailed validation
+    var validationSummary = invoice.GetValidationSummary();
+    Console.WriteLine($"Validation Summary: {validationSummary}");
+}
 ```
 
 ---
