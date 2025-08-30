@@ -5,7 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
 
-    <PackageId>Ro eFactura</PackageId>
+    <PackageId>RoeFactura</PackageId>
     <Version>1.0.1</Version>
     <Authors>Gabriel Ciuca-Albu</Authors>
     <Company>Rammer Tech</Company>
