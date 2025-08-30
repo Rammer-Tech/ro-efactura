@@ -59,6 +59,7 @@ internal class AnafEInvoiceClient : IAnafEInvoiceClient
         _uploadEndpoint = uploadEndpoint;
     }
 
+    /// <inheritdoc/>
     public async Task<List<EInvoiceAnafResponse>> ListEInvoicesAsync(string token, int days, string cui,
         string filter = null)
     {
@@ -103,6 +104,7 @@ internal class AnafEInvoiceClient : IAnafEInvoiceClient
         }
     }
 
+    /// <inheritdoc/>
     public async Task<EInvoiceAnafPagedListResponse> ListPagedEInvoicesAsync(string token, long startMilliseconds,
         long endMilliseconds, string cui,
         string filter = null, int page = 1)
@@ -155,6 +157,7 @@ internal class AnafEInvoiceClient : IAnafEInvoiceClient
         }
     }
 
+    /// <inheritdoc/>
     public async Task DownloadEInvoiceAsync(string token, string zipDestinationPath, string unzipDestinationPath,
         string eInvoiceDownloadId)
     {
@@ -220,6 +223,7 @@ internal class AnafEInvoiceClient : IAnafEInvoiceClient
         }
     }
 
+    /// <inheritdoc/>
     public async Task<string> ValidateXmlAsync(string token, string xmlFilePath)
     {
         token = Guard.Against.NullOrWhiteSpace(token);
@@ -247,6 +251,32 @@ internal class AnafEInvoiceClient : IAnafEInvoiceClient
         return await response.Content.ReadAsStringAsync();
     }
 
+    /// <inheritdoc/>
+    public async Task<string> ValidateXmlContentAsync(string token, string xmlContent, string fileName = "invoice.xml")
+    {
+        token = Guard.Against.NullOrWhiteSpace(token);
+        xmlContent = Guard.Against.NullOrWhiteSpace(xmlContent);
+        fileName = Guard.Against.NullOrWhiteSpace(fileName);
+
+        using MultipartFormDataContent form = new MultipartFormDataContent();
+        byte[] xmlBytes = System.Text.Encoding.UTF8.GetBytes(xmlContent);
+        using MemoryStream memoryStream = new MemoryStream(xmlBytes);
+        StreamContent fileContent = new StreamContent(memoryStream);
+        fileContent.Headers.ContentType = new MediaTypeHeaderValue("application/xml");
+        form.Add(fileContent, "file", fileName);
+
+        HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Post, _validateEndpoint)
+        {
+            Headers = { { "Authorization", $"Bearer {token}" } },
+            Content = form
+        };
+
+        HttpResponseMessage response = await _httpClient.SendAsync(request);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadAsStringAsync();
+    }
+
+    /// <inheritdoc/>
     public async Task<string> UploadXmlAsync(string token, string xmlFilePath)
     {
         token = Guard.Against.NullOrWhiteSpace(token);
@@ -274,9 +304,32 @@ internal class AnafEInvoiceClient : IAnafEInvoiceClient
         return await response.Content.ReadAsStringAsync();
     }
 
-    /// <summary>
-    /// Downloads and processes an invoice from ANAF, storing it in the database
-    /// </summary>
+    /// <inheritdoc/>
+    public async Task<string> UploadXmlContentAsync(string token, string xmlContent, string fileName = "invoice.xml")
+    {
+        token = Guard.Against.NullOrWhiteSpace(token);
+        xmlContent = Guard.Against.NullOrWhiteSpace(xmlContent);
+        fileName = Guard.Against.NullOrWhiteSpace(fileName);
+
+        using MultipartFormDataContent form = new MultipartFormDataContent();
+        byte[] xmlBytes = System.Text.Encoding.UTF8.GetBytes(xmlContent);
+        using MemoryStream memoryStream = new MemoryStream(xmlBytes);
+        StreamContent fileContent = new StreamContent(memoryStream);
+        fileContent.Headers.ContentType = new MediaTypeHeaderValue("application/xml");
+        form.Add(fileContent, "file", fileName);
+
+        HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Post, _uploadEndpoint)
+        {
+            Headers = { { "Authorization", $"Bearer {token}" } },
+            Content = form
+        };
+
+        HttpResponseMessage response = await _httpClient.SendAsync(request);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadAsStringAsync();
+    }
+
+    /// <inheritdoc/>
     public async Task<ProcessingResult<InvoiceType>> ProcessDownloadedInvoiceAsync(string token, string eInvoiceDownloadId)
     {
         token = Guard.Against.NullOrWhiteSpace(token);
@@ -346,9 +399,7 @@ internal class AnafEInvoiceClient : IAnafEInvoiceClient
     }
 
 
-    /// <summary>
-    /// Validates UBL XML content against RO_CIUS rules
-    /// </summary>
+    /// <inheritdoc/>
     public async Task<ProcessingResult<InvoiceType>> ValidateInvoiceXmlAsync(string xmlContent)
     {
         Guard.Against.NullOrWhiteSpace(xmlContent);
@@ -385,9 +436,7 @@ internal class AnafEInvoiceClient : IAnafEInvoiceClient
         }
     }
 
-    /// <summary>
-    /// Processes multiple downloaded invoices in batch
-    /// </summary>
+    /// <inheritdoc/>
     public async Task<List<ProcessingResult<InvoiceType>>> ProcessMultipleInvoicesAsync(
         string token, 
         IEnumerable<string> eInvoiceDownloadIds)
