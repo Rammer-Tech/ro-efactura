@@ -12,11 +12,11 @@ namespace RoEFactura.Services.Authentication;
 internal class AnafOAuthClient : IAnafOAuthClient
 {
     private readonly IHttpClientFactory _httpClientFactory;
-    private readonly ILogger _logger;
+    private readonly ILogger<AnafOAuthClient> _logger;
     private static X509Certificate2? _cachedCertificate;
     private static readonly Lock CertificateLock = new Lock();
 
-    public AnafOAuthClient(IHttpClientFactory httpClientFactory, ILogger logger)
+    public AnafOAuthClient(IHttpClientFactory httpClientFactory, ILogger<AnafOAuthClient> logger)
     {
         _httpClientFactory = httpClientFactory;
         _logger = logger;
