@@ -4,7 +4,6 @@ using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
 using RoEFactura.Models;
 
@@ -126,6 +125,8 @@ internal class AnafOAuthClient : IAnafOAuthClient
         // Prepare form-urlencoded body
         string formData = $"grant_type=authorization_code&" +
                           $"code={Uri.EscapeDataString(code)}&" +
+                          $"client_id={Uri.EscapeDataString(clientId)}&" +
+                          $"client_secret={Uri.EscapeDataString(clientSecret)}&" +
                           $"redirect_uri={redirectUri}&" +
                           $"token_content_type=jwt";
         
@@ -187,7 +188,7 @@ internal class AnafOAuthClient : IAnafOAuthClient
                 // If we can't parse the error response, we'll just use the raw content
             }
             
-            var errorType = response.StatusCode switch
+            TokenExchangeErrorType errorType = response.StatusCode switch
             {
                 HttpStatusCode.Unauthorized => TokenExchangeErrorType.AuthenticationFailed,
                 HttpStatusCode.BadRequest => TokenExchangeErrorType.InvalidRequest,
@@ -208,7 +209,7 @@ internal class AnafOAuthClient : IAnafOAuthClient
         // Parse the successful response
         try
         {
-            JsonSerializerOptions options = new JsonSerializerOptions
+            var options = new JsonSerializerOptions
             {
                 PropertyNameCaseInsensitive = true
             };
@@ -244,10 +245,9 @@ internal class AnafOAuthClient : IAnafOAuthClient
             }
             
             // Extract optional fields with safe defaults
-            string? refreshToken = tokenResponse.ContainsKey("refresh_token") ? 
-                tokenResponse["refresh_token"].GetString() : null;
+            var refreshToken = tokenResponse.TryGetValue("refresh_token", out JsonElement value) ? value.GetString() : null;
             
-            int expiresIn = 3600; // Default to 1 hour
+            var expiresIn = 3600; // Default to 1 hour
             if (tokenResponse.ContainsKey("expires_in"))
             {
                 try
