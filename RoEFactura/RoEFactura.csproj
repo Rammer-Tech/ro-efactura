@@ -6,7 +6,7 @@
     <Nullable>enable</Nullable>
 
     <PackageId>RoeFactura</PackageId>
-    <Version>1.0.4-beta.2</Version>
+    <Version>1.0.4-beta.3</Version>
     <Authors>Gabriel Ciuca-Albu</Authors>
     <Company>Rammer Tech</Company>
     <Description>A package aimed to easying how to interact with eFactura national invoicing system</Description>
