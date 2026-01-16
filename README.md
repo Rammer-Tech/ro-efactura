@@ -1,7 +1,7 @@
 # RoEFactura - Romanian ANAF eInvoicing Integration
 
 [![NuGet Version](https://img.shields.io/nuget/v/RoEFactura)](https://www.nuget.org/packages/RoEFactura)
-[![.NET](https://img.shields.io/badge/.NET-9.0-purple)](https://dotnet.microsoft.com/download/dotnet/9.0)
+[![.NET](https://img.shields.io/badge/.NET-9.0%20%7C%2010-purple)](https://dotnet.microsoft.com)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 RoEFactura is a .NET library for integrating with the Romanian ANAF eFactura system. It supports certificate-based authentication for desktop/server scenarios and OAuth 2.0 redirect flow for web apps. It also provides local UBL 2.1 processing with RO_CIUS validation.
@@ -16,7 +16,7 @@ RoEFactura is a .NET library for integrating with the Romanian ANAF eFactura sys
 
 ## Requirements
 
-- .NET 9.0 (net9.0)
+- .NET 9.0 or .NET 10 (net9.0 or net10.0)
 - Romanian digital certificate installed in CurrentUser/Personal (for certificate-based flow)
 
 ## Installation
@@ -33,7 +33,7 @@ dotnet add package RoEFactura
 
 ### PackageReference
 ```xml
-<PackageReference Include="RoEFactura" Version="1.0.4" />
+<PackageReference Include="RoEFactura" Version="1.1.1" />
 ```
 
 ## Quick Start

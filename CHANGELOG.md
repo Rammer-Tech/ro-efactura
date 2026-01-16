@@ -8,6 +8,19 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 - Documentation improvements and expanded API reference.
 
+## [1.1.1]
+
+### Added
+- MIT License file and package license metadata
+
+## [1.1.0]
+
+### Added
+- .NET 10 support via multi-targeting (net9.0 and net10.0)
+
+### Changed
+- Microsoft.Extensions packages now use version-specific references per target framework
+
 ## [1.0.4]
 
 ### Added
