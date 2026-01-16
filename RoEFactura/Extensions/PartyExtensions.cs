@@ -5,11 +5,22 @@ namespace RoEFactura.Extensions;
 /// <summary>
 /// Extensions for party data extraction from invoices
 /// </summary>
+/// <example>
+/// <code>
+/// var sellerVat = invoice.GetSellerVatId();
+/// var buyerName = invoice.GetBuyerName();
+/// </code>
+/// </example>
 public static partial class PartyExtensions
 {
     /// <summary>
     /// Gets the seller's VAT identifier
     /// </summary>
+    /// <example>
+    /// <code>
+    /// var vatId = invoice.GetSellerVatId();
+    /// </code>
+    /// </example>
     public static string? GetSellerVatId(this InvoiceType invoice)
     {
         return invoice?.AccountingSupplierParty?.Party?.PartyTaxScheme?.FirstOrDefault()?.CompanyID?.Value;

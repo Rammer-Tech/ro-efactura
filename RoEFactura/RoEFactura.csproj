@@ -10,6 +10,11 @@
     <Authors>Gabriel Ciuca-Albu</Authors>
     <Company>Rammer Tech</Company>
     <Description>A package aimed to easying how to interact with eFactura national invoicing system</Description>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageReleaseNotes>See CHANGELOG.md</PackageReleaseNotes>
+    <PackageTags>anaf efactura romania ubl invoice oauth</PackageTags>
+    <RepositoryUrl>https://github.com/gabrielciucaalbu/ro-efactura</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
   </PropertyGroup>
 
   <ItemGroup>
@@ -21,6 +26,10 @@
     <PackageReference Include="UblSharp.Validation" Version="1.1.0" />
     <PackageReference Include="FluentValidation" Version="11.9.0" />
     <PackageReference Include="FluentValidation.DependencyInjectionExtensions" Version="11.9.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\\README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 
 </Project>

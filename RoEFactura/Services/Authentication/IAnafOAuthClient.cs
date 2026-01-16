@@ -6,6 +6,11 @@ namespace RoEFactura.Services.Authentication;
 /// <summary>
 /// Interface for ANAF OAuth authentication client
 /// </summary>
+/// <remarks>
+/// Provides two flows:
+/// - Certificate-based authentication (desktop/server)
+/// - OAuth redirect flow (web apps)
+/// </remarks>
 public interface IAnafOAuthClient
 {
     // ===== Certificate-based authentication (for desktop/server apps) =====
@@ -34,6 +39,12 @@ public interface IAnafOAuthClient
     /// <param name="redirectUri">Redirect URI (must be registered with ANAF)</param>
     /// <param name="state">Optional state parameter for CSRF protection</param>
     /// <returns>The authorization URL to redirect the user to</returns>
+    /// <example>
+    /// <code>
+    /// var authUrl = client.GenerateAuthorizationUrl(options, state);
+    /// return Redirect(authUrl);
+    /// </code>
+    /// </example>
     public string GenerateAuthorizationUrl(string clientId, string redirectUri, string? state = null);
     
     /// <summary>
@@ -52,6 +63,11 @@ public interface IAnafOAuthClient
     /// <param name="clientSecret">OAuth client secret</param>
     /// <param name="redirectUri">Redirect URI (must match the one used in authorization)</param>
     /// <returns>Token response from ANAF</returns>
+    /// <example>
+    /// <code>
+    /// var token = await client.ExchangeAuthorizationCodeAsync(code, clientId, clientSecret, redirectUri);
+    /// </code>
+    /// </example>
     public Task<Token> ExchangeAuthorizationCodeAsync(string code, string clientId, string clientSecret, string redirectUri);
     
     /// <summary>
@@ -60,5 +76,10 @@ public interface IAnafOAuthClient
     /// <param name="code">Authorization code received from ANAF callback</param>
     /// <param name="options">OAuth configuration options</param>
     /// <returns>Token response from ANAF</returns>
+    /// <example>
+    /// <code>
+    /// var token = await client.ExchangeAuthorizationCodeAsync(code, options);
+    /// </code>
+    /// </example>
     public Task<Token> ExchangeAuthorizationCodeAsync(string code, AnafOAuthOptions options);
 }

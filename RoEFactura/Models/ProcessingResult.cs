@@ -2,6 +2,9 @@ using FluentValidation.Results;
 
 namespace RoEFactura.Models;
 
+/// <summary>
+/// Result wrapper for processing and validation operations.
+/// </summary>
 public class ProcessingResult<T>
 {
     public bool IsSuccess { get; private set; }
@@ -11,6 +14,9 @@ public class ProcessingResult<T>
 
     private ProcessingResult() { }
 
+    /// <summary>
+    /// Creates a successful result with data.
+    /// </summary>
     public static ProcessingResult<T> Success(T data)
     {
         return new ProcessingResult<T>
@@ -20,6 +26,9 @@ public class ProcessingResult<T>
         };
     }
 
+    /// <summary>
+    /// Creates a failed result with validation errors.
+    /// </summary>
     public static ProcessingResult<T> Failed(IEnumerable<ValidationFailure> errors)
     {
         return new ProcessingResult<T>
@@ -29,6 +38,9 @@ public class ProcessingResult<T>
         };
     }
 
+    /// <summary>
+    /// Creates a failed result with a general error message.
+    /// </summary>
     public static ProcessingResult<T> Failed(string errorMessage)
     {
         return new ProcessingResult<T>
@@ -41,6 +53,9 @@ public class ProcessingResult<T>
         };
     }
 
+    /// <summary>
+    /// Adds warnings to the result.
+    /// </summary>
     public ProcessingResult<T> WithWarnings(IEnumerable<string> warnings)
     {
         Warnings.AddRange(warnings);

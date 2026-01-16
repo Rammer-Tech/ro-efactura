@@ -7,6 +7,12 @@ namespace RoEFactura.Extensions;
 /// <summary>
 /// Core UblSharp extensions for XML serialization/deserialization
 /// </summary>
+/// <example>
+/// <code>
+/// var invoice = UblSharpExtensions.LoadInvoiceFromXml(xmlContent);
+/// var xml = invoice?.SaveInvoiceToXml();
+/// </code>
+/// </example>
 public static partial class UblSharpExtensions
 {
     /// <summary>

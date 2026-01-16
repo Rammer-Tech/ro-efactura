@@ -6,11 +6,22 @@ namespace RoEFactura.Extensions;
 /// <summary>
 /// Extensions for InvoiceType analysis and data extraction
 /// </summary>
+/// <example>
+/// <code>
+/// var totalDue = invoice.GetTotalAmountDue();
+/// var summary = invoice.GetValidationSummary();
+/// </code>
+/// </example>
 public static partial class InvoiceTypeExtensions
 {
     /// <summary>
     /// Determines if the invoice is a Romanian invoice
     /// </summary>
+    /// <example>
+    /// <code>
+    /// if (invoice.IsRomanianInvoice()) { /* apply RO_CIUS rules */ }
+    /// </code>
+    /// </example>
     public static bool IsRomanianInvoice(this InvoiceType invoice)
     {
         if (invoice == null) return false;
@@ -43,6 +54,11 @@ public static partial class InvoiceTypeExtensions
     /// <summary>
     /// Gets the total amount due for payment
     /// </summary>
+    /// <example>
+    /// <code>
+    /// decimal amount = invoice.GetTotalAmountDue();
+    /// </code>
+    /// </example>
     public static decimal GetTotalAmountDue(this InvoiceType invoice)
     {
         return invoice?.LegalMonetaryTotal?.PayableAmount?.Value ?? 0m;

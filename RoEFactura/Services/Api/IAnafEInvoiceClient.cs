@@ -7,11 +7,22 @@ namespace RoEFactura.Services.Api;
 /// <summary>
 /// Interface for ANAF e-invoice API client
 /// </summary>
+/// <remarks>
+/// All methods require a valid ANAF access token (Bearer JWT).
+/// </remarks>
 public interface IAnafEInvoiceClient
 {
     /// <summary>
     /// Lists e-invoices from ANAF using the non-paged endpoint
     /// </summary>
+    /// <remarks>
+    /// The optional <paramref name="filter"/> value is passed through to ANAF as the "filtru" query parameter.
+    /// </remarks>
+    /// <example>
+    /// <code>
+    /// var items = await client.ListEInvoicesAsync(token.AccessToken, 30, "RO12345678");
+    /// </code>
+    /// </example>
     /// <param name="token">Bearer token for ANAF API authentication</param>
     /// <param name="days">Number of days to look back for invoices (must be positive)</param>
     /// <param name="cui">Romanian fiscal identification code (CUI/CIF) to filter invoices</param>
@@ -24,6 +35,16 @@ public interface IAnafEInvoiceClient
     /// <summary>
     /// Lists e-invoices from ANAF using the paginated endpoint for efficient retrieval of large datasets
     /// </summary>
+    /// <remarks>
+    /// Use Unix timestamps in milliseconds for <paramref name="startMilliseconds"/> and <paramref name="endMilliseconds"/>.
+    /// </remarks>
+    /// <example>
+    /// <code>
+    /// long start = DateTimeOffset.UtcNow.AddDays(-30).ToUnixTimeMilliseconds();
+    /// long end = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+    /// var page = await client.ListPagedEInvoicesAsync(token.AccessToken, start, end, "RO12345678");
+    /// </code>
+    /// </example>
     /// <param name="token">Bearer token for ANAF API authentication</param>
     /// <param name="startMilliseconds">Start time as Unix timestamp in milliseconds (must be positive)</param>
     /// <param name="endMilliseconds">End time as Unix timestamp in milliseconds (must be positive)</param>
@@ -50,6 +71,10 @@ public interface IAnafEInvoiceClient
     /// <summary>
     /// Validates an XML invoice file against ANAF validation rules
     /// </summary>
+    /// <remarks>
+    /// Use this overload when you already have the XML on disk.
+    /// For in-memory content, use <see cref="ValidateXmlContentAsync"/>.
+    /// </remarks>
     /// <param name="token">Bearer token for ANAF API authentication</param>
     /// <param name="xmlFilePath">Absolute path to the XML file to validate</param>
     /// <returns>Validation response from ANAF API indicating success or validation errors</returns>
@@ -61,6 +86,9 @@ public interface IAnafEInvoiceClient
     /// <summary>
     /// Validates XML invoice content against ANAF validation rules without requiring a physical file
     /// </summary>
+    /// <remarks>
+    /// Use this overload when you already have the XML in memory.
+    /// </remarks>
     /// <param name="token">Bearer token for ANAF API authentication</param>
     /// <param name="xmlContent">XML content as string to validate</param>
     /// <param name="fileName">Optional filename to use in the multipart form (defaults to "invoice.xml")</param>
@@ -72,6 +100,10 @@ public interface IAnafEInvoiceClient
     /// <summary>
     /// Uploads an XML invoice file to the ANAF e-invoice system
     /// </summary>
+    /// <remarks>
+    /// Use this overload when you already have the XML on disk.
+    /// For in-memory content, use <see cref="UploadXmlContentAsync"/>.
+    /// </remarks>
     /// <param name="token">Bearer token for ANAF API authentication</param>
     /// <param name="xmlFilePath">Absolute path to the XML file to upload</param>
     /// <returns>Upload response from ANAF API with status and processing information</returns>
@@ -83,6 +115,9 @@ public interface IAnafEInvoiceClient
     /// <summary>
     /// Uploads XML invoice content to the ANAF e-invoice system without requiring a physical file
     /// </summary>
+    /// <remarks>
+    /// Use this overload when you already have the XML in memory.
+    /// </remarks>
     /// <param name="token">Bearer token for ANAF API authentication</param>
     /// <param name="xmlContent">XML content as string to upload</param>
     /// <param name="fileName">Optional filename to use in the multipart form (defaults to "invoice.xml")</param>
