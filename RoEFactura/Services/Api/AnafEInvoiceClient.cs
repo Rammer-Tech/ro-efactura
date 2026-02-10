@@ -1,4 +1,4 @@
-﻿using System.IO.Compression;
+using System.IO.Compression;
 using System.Net.Http.Headers;
 using Ardalis.GuardClauses;
 using Microsoft.Extensions.Hosting;
@@ -366,7 +366,7 @@ internal class AnafEInvoiceClient : IAnafEInvoiceClient
 
                 // Process through UBL pipeline
                 byte[] xmlBytes = System.Text.Encoding.UTF8.GetBytes(xmlContent);
-                ProcessingResult<InvoiceType> result = await _ublProcessingService.ProcessInvoiceXmlAsync(xmlBytes, eInvoiceDownloadId);
+                ProcessingResult<InvoiceType> result = await _ublProcessingService.ProcessInvoiceXmlAsync(xmlBytes, eInvoiceDownloadId, skipValidation: true);
 
                 if (result.IsSuccess && result.Data != null)
                 {

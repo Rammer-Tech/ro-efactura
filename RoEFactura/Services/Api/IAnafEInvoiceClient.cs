@@ -127,11 +127,12 @@ public interface IAnafEInvoiceClient
     Task<string> UploadXmlContentAsync(string token, string xmlContent, string fileName = "invoice.xml");
 
     /// <summary>
-    /// Downloads an e-invoice from ANAF, extracts it, and processes it through the UBL validation pipeline
+    /// Downloads an e-invoice from ANAF, extracts it, and parses it into a UBL InvoiceType object.
+    /// RO_CIUS validation is skipped because invoices in SPV have already been validated by ANAF at upload time.
     /// </summary>
     /// <param name="token">Bearer token for ANAF API authentication</param>
     /// <param name="eInvoiceDownloadId">Unique identifier for the invoice to download and process</param>
-    /// <returns>Processing result containing the UBL InvoiceType object if successful, or validation errors if failed</returns>
+    /// <returns>Processing result containing the parsed UBL InvoiceType object if successful, or parse errors if failed</returns>
     /// <exception cref="ArgumentException">Thrown when token or eInvoiceDownloadId are null or empty</exception>
     /// <exception cref="HttpRequestException">Thrown when the ANAF API request fails</exception>
     Task<ProcessingResult<InvoiceType>> ProcessDownloadedInvoiceAsync(string token, string eInvoiceDownloadId);

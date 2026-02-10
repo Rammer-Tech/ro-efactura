@@ -26,7 +26,7 @@ internal class UblProcessingService : IUblProcessingService
     /// <summary>
     /// Processes a UBL invoice from XML content
     /// </summary>
-    public async Task<ProcessingResult<InvoiceType>> ProcessInvoiceAsync(string xmlContent, string? anafDownloadId = null)
+    public async Task<ProcessingResult<InvoiceType>> ProcessInvoiceAsync(string xmlContent, string? anafDownloadId = null, bool skipValidation = false)
     {
         try
         {
@@ -42,18 +42,25 @@ internal class UblProcessingService : IUblProcessingService
 
             _logger.LogInformation("UBL XML parsed successfully. Invoice: {InvoiceNumber}", ublInvoice.ID?.Value);
 
-            // 2. Validate against RO_CIUS rules
-            ValidationResult? validationResult = await _ublValidator.ValidateAsync(ublInvoice);
-            if (!validationResult.IsValid)
+            // 2. Validate against RO_CIUS rules (skipped for invoices already validated by ANAF SPV)
+            if (!skipValidation)
             {
-                _logger.LogWarning("UBL validation failed for invoice {InvoiceNumber}: {Errors}", 
-                    ublInvoice.ID?.Value, string.Join(", ", validationResult.Errors.Select(e => e.ErrorMessage)));
-                
-                return ProcessingResult<InvoiceType>.Failed(validationResult.Errors);
+                ValidationResult? validationResult = await _ublValidator.ValidateAsync(ublInvoice);
+                if (!validationResult.IsValid)
+                {
+                    _logger.LogWarning("UBL validation failed for invoice {InvoiceNumber}: {Errors}", 
+                        ublInvoice.ID?.Value, string.Join(", ", validationResult.Errors.Select(e => e.ErrorMessage)));
+                    
+                    return ProcessingResult<InvoiceType>.Failed(validationResult.Errors);
+                }
+
+                _logger.LogInformation("UBL validation passed for invoice {InvoiceNumber}", ublInvoice.ID?.Value);
+            }
+            else
+            {
+                _logger.LogInformation("UBL validation skipped for invoice {InvoiceNumber} (already validated by ANAF SPV)", ublInvoice.ID?.Value);
             }
 
-            _logger.LogInformation("UBL validation passed for invoice {InvoiceNumber}", ublInvoice.ID?.Value);
-            
             return ProcessingResult<InvoiceType>.Success(ublInvoice);
         }
         catch (Exception ex)
@@ -130,7 +137,7 @@ internal class UblProcessingService : IUblProcessingService
     /// <summary>
     /// Processes UBL XML content and returns structured result
     /// </summary>
-    public async Task<ProcessingResult<InvoiceType>> ProcessInvoiceXmlAsync(byte[] xmlData, string fileName)
+    public async Task<ProcessingResult<InvoiceType>> ProcessInvoiceXmlAsync(byte[] xmlData, string fileName, bool skipValidation = false)
     {
         try
         {
@@ -138,7 +145,7 @@ internal class UblProcessingService : IUblProcessingService
             _logger.LogInformation("Processing UBL XML file: {FileName}", fileName);
             
             UpdateStats(stats => stats.TotalProcessed++);
-            ProcessingResult<InvoiceType> result = await ProcessInvoiceAsync(xmlContent);
+            ProcessingResult<InvoiceType> result = await ProcessInvoiceAsync(xmlContent, skipValidation: skipValidation);
             
             if (result.IsSuccess)
             {
