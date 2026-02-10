@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFrameworks>net9.0;net10.0</TargetFrameworks>
@@ -6,7 +6,7 @@
     <Nullable>enable</Nullable>
 
     <PackageId>RoeFactura</PackageId>
-    <Version>1.1.1</Version>
+    <Version>1.1.2-local</Version>
     <Authors>Gabriel Ciuca-Albu</Authors>
     <Company>Rammer Tech</Company>
     <Description>A package aimed to easying how to interact with eFactura national invoicing system</Description>
