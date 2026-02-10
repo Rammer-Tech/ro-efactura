@@ -30,13 +30,27 @@ internal class UblProcessingService : IUblProcessingService
     {
         try
         {
-            _logger.LogInformation("Starting UBL invoice processing");
+            _logger.LogInformation("Starting UBL invoice processing for {AnafDownloadId}", anafDownloadId ?? "unknown");
 
             // 1. Parse UBL XML
-            InvoiceType? ublInvoice = UblSharpExtensions.LoadInvoiceFromXml(xmlContent);
+            InvoiceType? ublInvoice;
+            try
+            {
+                ublInvoice = UblSharpExtensions.LoadInvoiceFromXml(xmlContent);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex,
+                    "Exception parsing UBL XML for download {AnafDownloadId}. XML preview: {XmlPreview}",
+                    anafDownloadId, Truncate(xmlContent, 500));
+                return ProcessingResult<InvoiceType>.Failed($"XML parse error: {ex.Message}");
+            }
+
             if (ublInvoice == null)
             {
-                _logger.LogError("Failed to parse UBL XML");
+                _logger.LogError(
+                    "LoadInvoiceFromXml returned null for {AnafDownloadId}. XML preview: {XmlPreview}",
+                    anafDownloadId, Truncate(xmlContent, 500));
                 return ProcessingResult<InvoiceType>.Failed("Failed to parse UBL XML content");
             }
 
@@ -65,7 +79,7 @@ internal class UblProcessingService : IUblProcessingService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error processing UBL invoice");
+            _logger.LogError(ex, "Error processing UBL invoice {AnafDownloadId}", anafDownloadId);
             return ProcessingResult<InvoiceType>.Failed($"Processing error: {ex.Message}");
         }
     }
@@ -111,9 +125,24 @@ internal class UblProcessingService : IUblProcessingService
             _logger.LogInformation("Validating UBL XML");
 
             // Parse UBL XML
-            InvoiceType? ublInvoice = UblSharpExtensions.LoadInvoiceFromXml(xmlContent);
+            InvoiceType? ublInvoice;
+            try
+            {
+                ublInvoice = UblSharpExtensions.LoadInvoiceFromXml(xmlContent);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex,
+                    "Exception parsing UBL XML during validation. XML preview: {XmlPreview}",
+                    Truncate(xmlContent, 500));
+                return ProcessingResult<InvoiceType>.Failed($"XML parse error: {ex.Message}");
+            }
+
             if (ublInvoice == null)
             {
+                _logger.LogError(
+                    "LoadInvoiceFromXml returned null during validation. XML preview: {XmlPreview}",
+                    Truncate(xmlContent, 500));
                 return ProcessingResult<InvoiceType>.Failed("Failed to parse UBL XML content");
             }
 
@@ -259,6 +288,12 @@ internal class UblProcessingService : IUblProcessingService
             _globalStats = new ProcessingStats();
             _logger.LogInformation("Processing statistics reset");
         }
+    }
+
+    private static string Truncate(string? value, int maxLength)
+    {
+        if (string.IsNullOrEmpty(value)) return "(empty)";
+        return value.Length <= maxLength ? value : value[..maxLength] + "...";
     }
 
     private static void UpdateStats(Action<ProcessingStats> updateAction)

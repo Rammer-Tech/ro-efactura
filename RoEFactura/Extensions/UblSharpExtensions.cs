@@ -16,26 +16,20 @@ namespace RoEFactura.Extensions;
 public static partial class UblSharpExtensions
 {
     /// <summary>
-    /// Loads an InvoiceType from XML string
+    /// Loads an InvoiceType from XML string.
+    /// Throws on deserialization errors -- callers should catch and log with context.
     /// </summary>
     public static InvoiceType? LoadInvoiceFromXml(string xmlContent)
     {
         if (string.IsNullOrWhiteSpace(xmlContent))
             return null;
 
-        try
-        {
-            XmlSerializer serializer = new XmlSerializer(typeof(InvoiceType));
-            using StringReader stringReader = new StringReader(xmlContent);
-            using XmlReader xmlReader = XmlReader.Create(stringReader);
-            
-            InvoiceType? invoice = serializer.Deserialize(xmlReader) as InvoiceType;
-            return invoice;
-        }
-        catch (Exception)
-        {
-            return null;
-        }
+        // Let deserialization exceptions propagate -- callers need to know WHY parsing failed
+        XmlSerializer serializer = new XmlSerializer(typeof(InvoiceType));
+        using StringReader stringReader = new StringReader(xmlContent);
+        using XmlReader xmlReader = XmlReader.Create(stringReader);
+
+        return serializer.Deserialize(xmlReader) as InvoiceType;
     }
 
     /// <summary>

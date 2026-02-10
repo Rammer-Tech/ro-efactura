@@ -370,7 +370,7 @@ internal class AnafEInvoiceClient : IAnafEInvoiceClient
 
                 if (result.IsSuccess && result.Data != null)
                 {
-                    _logger.LogInformation("Successfully processed downloaded invoice from ANAF");
+                    _logger.LogInformation("Successfully processed downloaded invoice {DownloadId} from ANAF", eInvoiceDownloadId);
                 }
 
                 return result;
