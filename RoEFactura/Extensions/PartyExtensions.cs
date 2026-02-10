@@ -51,19 +51,25 @@ public static partial class PartyExtensions
     }
 
     /// <summary>
-    /// Gets the seller's name
+    /// Gets the seller's name.
+    /// Tries PartyLegalEntity.RegistrationName (BT-27, mandatory legal name) first,
+    /// then falls back to PartyName.Name (BT-28, optional trading name).
     /// </summary>
     public static string? GetSellerName(this InvoiceType invoice)
     {
-        return invoice?.AccountingSupplierParty?.Party?.PartyName?.FirstOrDefault()?.Name?.Value;
+        return invoice?.AccountingSupplierParty?.Party?.PartyLegalEntity?.FirstOrDefault()?.RegistrationName?.Value
+            ?? invoice?.AccountingSupplierParty?.Party?.PartyName?.FirstOrDefault()?.Name?.Value;
     }
 
     /// <summary>
-    /// Gets the buyer's name
+    /// Gets the buyer's name.
+    /// Tries PartyLegalEntity.RegistrationName (BT-44, mandatory legal name) first,
+    /// then falls back to PartyName.Name (BT-45, optional trading name).
     /// </summary>
     public static string? GetBuyerName(this InvoiceType invoice)
     {
-        return invoice?.AccountingCustomerParty?.Party?.PartyName?.FirstOrDefault()?.Name?.Value;
+        return invoice?.AccountingCustomerParty?.Party?.PartyLegalEntity?.FirstOrDefault()?.RegistrationName?.Value
+            ?? invoice?.AccountingCustomerParty?.Party?.PartyName?.FirstOrDefault()?.Name?.Value;
     }
 
     /// <summary>
@@ -83,11 +89,14 @@ public static partial class PartyExtensions
     }
 
     /// <summary>
-    /// Gets the payee's name (if different from seller)
+    /// Gets the payee's name (if different from seller).
+    /// Tries PartyLegalEntity.RegistrationName (BT-59, mandatory legal name) first,
+    /// then falls back to PartyName.Name (optional trading name).
     /// </summary>
     public static string? GetPayeeName(this InvoiceType invoice)
     {
-        return invoice?.PayeeParty?.PartyName?.FirstOrDefault()?.Name?.Value;
+        return invoice?.PayeeParty?.PartyLegalEntity?.FirstOrDefault()?.RegistrationName?.Value
+            ?? invoice?.PayeeParty?.PartyName?.FirstOrDefault()?.Name?.Value;
     }
 
     /// <summary>
@@ -104,5 +113,23 @@ public static partial class PartyExtensions
     public static string? GetPayeeLegalId(this InvoiceType invoice)
     {
         return invoice?.PayeeParty?.PartyLegalEntity?.FirstOrDefault()?.CompanyID?.Value;
+    }
+
+    /// <summary>
+    /// Gets the seller's party identification (BT-29).
+    /// This is a general identifier field where some systems place the CUI/CIF.
+    /// </summary>
+    public static string? GetSellerIdentifier(this InvoiceType invoice)
+    {
+        return invoice?.AccountingSupplierParty?.Party?.PartyIdentification?.FirstOrDefault()?.ID?.Value;
+    }
+
+    /// <summary>
+    /// Gets the buyer's party identification (BT-46).
+    /// This is a general identifier field where some systems place the CUI/CIF.
+    /// </summary>
+    public static string? GetBuyerIdentifier(this InvoiceType invoice)
+    {
+        return invoice?.AccountingCustomerParty?.Party?.PartyIdentification?.FirstOrDefault()?.ID?.Value;
     }
 }
