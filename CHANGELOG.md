@@ -6,6 +6,9 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+## [1.1.2]
+
+### Changed
 - Documentation improvements and expanded API reference.
 
 ## [1.1.1]
