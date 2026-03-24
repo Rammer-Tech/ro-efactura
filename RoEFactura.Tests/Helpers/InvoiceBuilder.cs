@@ -161,7 +161,7 @@ public class InvoiceBuilder
     public InvoiceBuilder WithoutSellerAddress()
     {
         if (_invoice.AccountingSupplierParty?.Party != null)
-            _invoice.AccountingSupplierParty.Party.PostalAddress = null;
+            _invoice.AccountingSupplierParty.Party.PostalAddress = new AddressType();
         return this;
     }
 
@@ -186,7 +186,7 @@ public class InvoiceBuilder
     public InvoiceBuilder WithoutBuyerAddress()
     {
         if (_invoice.AccountingCustomerParty?.Party != null)
-            _invoice.AccountingCustomerParty.Party.PostalAddress = null;
+            _invoice.AccountingCustomerParty.Party.PostalAddress = new AddressType();
         return this;
     }
 
