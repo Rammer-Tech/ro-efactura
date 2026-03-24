@@ -61,17 +61,22 @@ public class TotalsValidator : AbstractValidator<InvoiceType>
 
     private static bool ValidateLineNetAmountSum(InvoiceType invoice)
     {
-        if (invoice.InvoiceLine == null || invoice.LegalMonetaryTotal?.TaxExclusiveAmount?.Value == null)
+        // UblSharp never exposes null AmountType instances; absence is represented by missing currencyID.
+        if (invoice.InvoiceLine == null || string.IsNullOrEmpty(invoice.LegalMonetaryTotal?.TaxExclusiveAmount?.currencyID))
             return true;
 
         decimal lineSum = invoice.InvoiceLine.Sum(line => line.LineExtensionAmount?.Value ?? 0);
-        decimal docTotal = invoice.LegalMonetaryTotal.TaxExclusiveAmount.Value;
+        decimal docTotal = invoice.LegalMonetaryTotal!.TaxExclusiveAmount!.Value;
 
         return Math.Abs(lineSum - docTotal) <= 0.01m;
     }
 
     private static bool ValidateVatAmountCalculation(InvoiceType invoice)
     {
+        if (string.IsNullOrEmpty(invoice.LegalMonetaryTotal?.TaxExclusiveAmount?.currencyID)
+            || string.IsNullOrEmpty(invoice.LegalMonetaryTotal?.TaxInclusiveAmount?.currencyID))
+            return true;
+
         decimal? totalWithoutVat = invoice.LegalMonetaryTotal?.TaxExclusiveAmount?.Value;
         decimal? totalWithVat = invoice.LegalMonetaryTotal?.TaxInclusiveAmount?.Value;
         decimal? vatTotal = invoice.TaxTotal?.FirstOrDefault()?.TaxAmount?.Value;
@@ -137,16 +142,17 @@ public class TotalsValidator : AbstractValidator<InvoiceType>
 
     private static bool HasValidTaxExclusiveAmount(InvoiceType invoice)
     {
-        return invoice?.LegalMonetaryTotal?.TaxExclusiveAmount?.Value != null;
+        // UblSharp AmountType.Value is non-nullable decimal; presence is indicated by currencyID (see InvoiceBuilder).
+        return !string.IsNullOrEmpty(invoice?.LegalMonetaryTotal?.TaxExclusiveAmount?.currencyID);
     }
 
     private static bool HasValidTaxInclusiveAmount(InvoiceType invoice)
     {
-        return invoice?.LegalMonetaryTotal?.TaxInclusiveAmount?.Value != null;
+        return !string.IsNullOrEmpty(invoice?.LegalMonetaryTotal?.TaxInclusiveAmount?.currencyID);
     }
 
     private static bool HasValidPayableAmount(InvoiceType invoice)
     {
-        return invoice?.LegalMonetaryTotal?.PayableAmount?.Value != null;
+        return !string.IsNullOrEmpty(invoice?.LegalMonetaryTotal?.PayableAmount?.currencyID);
     }
 }

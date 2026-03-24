@@ -110,19 +110,20 @@ public class InvoiceBuilder
 
     public InvoiceBuilder WithoutTaxExclusiveAmount()
     {
-        _invoice.LegalMonetaryTotal!.TaxExclusiveAmount = null;
+        // UblSharp AmountType getters never return null; missing monetary amounts use no currencyID.
+        _invoice.LegalMonetaryTotal!.TaxExclusiveAmount = new AmountType { Value = 0m, currencyID = null };
         return this;
     }
 
     public InvoiceBuilder WithoutTaxInclusiveAmount()
     {
-        _invoice.LegalMonetaryTotal!.TaxInclusiveAmount = null;
+        _invoice.LegalMonetaryTotal!.TaxInclusiveAmount = new AmountType { Value = 0m, currencyID = null };
         return this;
     }
 
     public InvoiceBuilder WithoutPayableAmount()
     {
-        _invoice.LegalMonetaryTotal!.PayableAmount = null;
+        _invoice.LegalMonetaryTotal!.PayableAmount = new AmountType { Value = 0m, currencyID = null };
         return this;
     }
 
