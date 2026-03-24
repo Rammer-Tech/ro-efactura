@@ -116,7 +116,8 @@ public class InvoiceLineValidator : AbstractValidator<InvoiceLineType>
 
     private static bool HasValidQuantity(InvoiceLineType line)
     {
-        return line?.InvoicedQuantity?.Value != null;
+        // UblSharp QuantityType.Value is non-nullable decimal; default instance has Value 0.
+        return line?.InvoicedQuantity?.Value != 0;
     }
 
     private static bool HasValidUnitCode(InvoiceLineType line)
@@ -126,12 +127,12 @@ public class InvoiceLineValidator : AbstractValidator<InvoiceLineType>
 
     private static bool HasValidLineExtensionAmount(InvoiceLineType line)
     {
-        return line?.LineExtensionAmount?.Value != null;
+        return !string.IsNullOrEmpty(line?.LineExtensionAmount?.currencyID);
     }
 
     private static bool HasValidPriceAmount(InvoiceLineType line)
     {
-        return line?.Price?.PriceAmount?.Value != null;
+        return !string.IsNullOrEmpty(line?.Price?.PriceAmount?.currencyID);
     }
 
     private static bool HasValidItemName(InvoiceLineType line)
