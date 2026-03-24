@@ -1,139 +1,236 @@
 ---
 name: publish-release
-description: Create a new versioned release branch (r/x.x.x), bump version in the .csproj, update CHANGELOG.md, pack, and push the NuGet package to NuGet.org. Use when the user asks to release, publish, bump version, push to NuGet, or cut a new release of RoEFactura.
+description: Automates RoEFactura releases by analyzing commits vs main, inferring semver bump, drafting CHANGELOG, then after a single user approval creates r/x.x.x, packs, pushes NuGet, and optionally tags/GitHub release. Use when the user asks to release, publish, bump version, push to NuGet, or cut a new release.
 ---
 
-# Publish RoEFactura Release
+# Publish RoEFactura Release (automated)
 
 ## Overview
 
-Releases follow this pattern:
 - Branch naming: `r/x.x.x` (e.g. `r/1.2.0`)
 - Version source of truth: `<Version>` in `RoEFactura/RoEFactura.csproj`
 - Packages output to: `nupkgs/`
-- CHANGELOG format: Keep a Changelog with `[Unreleased]` section at the top
+- CHANGELOG: Keep a Changelog with `## [Unreleased]` at the top (`CHANGELOG.md`)
+- **One user interaction only:** show the approval block below; if the user approves (`yes`), run the rest without further prompts.
 
-## Step 1 — Determine new version
+---
 
-Read `RoEFactura/RoEFactura.csproj` to find `<Version>`. Ask the user which semver component to bump (major / minor / patch) if not already specified.
+## Phase A — Automated analysis (read-only, no questions)
 
-**Current version discovery:**
+Run this phase fully before showing the approval prompt.
+
+### A1 — Preconditions (fail fast)
+
+- **`NUGET_API_KEY`** must be set in the environment. If missing, stop immediately and tell the user to `export NUGET_API_KEY=...`. Do **not** show the approval prompt until this is set.
+- **`dotnet`** must be available.
+
+### A2 — Current version
+
 ```bash
 grep '<Version>' RoEFactura/RoEFactura.csproj
 ```
 
-## Step 2 — Confirm before proceeding
+Parse `MAJOR.MINOR.PATCH` (strip any `-local` / pre-release suffix for bump math).
 
-Show the user:
-- Current version → New version
-- CHANGELOG `[Unreleased]` contents (if any)
-- Confirm they want to proceed
+### A3 — Commit range vs `main`
 
-## Step 3 — Create and switch to release branch
+Record the branch being released:
 
 ```bash
-git checkout main
-git pull origin main
-git checkout -b r/NEW_VERSION
+SOURCE_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
 ```
 
-## Step 4 — Bump version in .csproj
+Update refs, then list everything not on upstream main:
 
-Update `<Version>OLD</Version>` → `<Version>NEW</Version>` in `RoEFactura/RoEFactura.csproj`.
+```bash
+git fetch origin main 2>/dev/null || true
+git log origin/main..HEAD --oneline
+git log origin/main..HEAD --no-merges --format='%s%n%b%n---'
+git diff --stat origin/main...HEAD
+```
 
-Also remove any `-local` or pre-release suffix if present (the `.csproj` sometimes has `1.1.2-local` for local dev).
+If `origin/main..HEAD` is **empty**, stop: there is nothing to release from this branch relative to `main` (or explain if `main` is not the right base).
 
-## Step 5 — Update CHANGELOG.md
+### A4 — Semver bump rules (conventional commits)
 
-Move content from `[Unreleased]` to a new `[NEW_VERSION]` section. Add a release date in ISO format.
+Inspect **subject lines and bodies** of commits in `origin/main..HEAD`. Apply the **highest** matching rule:
 
-Template:
+| Priority | Signal | Bump |
+|----------|--------|------|
+| 1 | `BREAKING CHANGE` in body, or subject matches `^[a-z]+(\([^)]+\))?!:` (e.g. `feat(api)!:`) | **major** |
+| 2 | Subject starts with `feat` (`feat:` or `feat(scope):`) | **minor** |
+| 3 | Everything else (`fix`, `chore`, `docs`, `refactor`, `style`, `perf`, `test`, …) | **patch** |
+
+Compute **NEW_VERSION** from current `MAJOR.MINOR.PATCH` accordingly.
+
+If the user explicitly stated a version or bump type **in the same request**, that overrides the table (still show it in the plan for transparency).
+
+### A5 — CHANGELOG draft
+
+1. Read `CHANGELOG.md` from `## [Unreleased]` until the next `## [` heading.
+2. Reuse those bullets under the correct `### Added` / `### Changed` / `### Fixed` headings when possible.
+3. For commits not yet reflected, add concise bullets:
+   - `feat` → usually `### Added` or `### Changed`
+   - `fix` → `### Fixed`
+   - `docs` / `chore` / internal-only → `### Changed` or omit if not user-facing
+4. If nothing meaningful remains, use a single `### Changed` bullet: maintenance / release alignment.
+
+Use today’s date in **ISO** format (`YYYY-MM-DD`) for the new section.
+
+### A6 — GitHub CLI (optional step)
+
+If you will create a GitHub release, require `gh` authenticated; if missing, note in the plan that step P will be skipped or manual.
+
+---
+
+## Phase B — Single approval prompt (only user gate)
+
+Show **exactly** this structure (fill in placeholders). Do not ask follow-up questions in the same turn—wait for one reply.
+
+```text
+RELEASE PLAN
+============
+Current version : OLD_VERSION
+Proposed version: NEW_VERSION  (MAJOR|MINOR|PATCH bump — one-line reason)
+Source branch   : SOURCE_BRANCH
+Base            : origin/main..HEAD (N commits)
+Branch to push  : r/NEW_VERSION
+
+Files changed vs main (summary):
+  <key paths or stat one-liner>
+
+CHANGELOG entry:
+  ### Added
+  - ...
+  ### Changed
+  - ...
+  ### Fixed
+  - ...
+
+Next steps after approval (no further prompts):
+  merge SOURCE_BRANCH into r/NEW_VERSION from main, bump .csproj, update CHANGELOG, build, pack, push branch, nuget push, tag vNEW_VERSION, gh release.
+
+Approve? (yes to proceed, anything else to cancel)
+```
+
+**Approval:** proceed only if the user clearly agrees (e.g. `yes`, `y`, `approve`, `go`). Otherwise stop.
+
+---
+
+## Phase C — Execute without pausing (after approval)
+
+Assume repository root is ro-efactura. Replace `NEW_VERSION` / `SOURCE_BRANCH` with concrete values.
+
+### C1 — Release branch with all analyzed commits
+
+```bash
+git fetch origin main
+git checkout main
+git pull origin main
+git checkout -b "r/NEW_VERSION"
+git merge --no-ff "SOURCE_BRANCH" -m "merge(SOURCE_BRANCH): release NEW_VERSION"
+```
+
+Resolve conflicts if any; release must not proceed with unresolved conflicts.
+
+### C2 — Bump version in `.csproj`
+
+Set `<Version>NEW_VERSION</Version>` in `RoEFactura/RoEFactura.csproj`. Remove `-local` or other pre-release suffixes from that property.
+
+### C3 — Write `CHANGELOG.md`
+
+Insert below `## [Unreleased]`:
+
 ```markdown
 ## [Unreleased]
 
 ## [NEW_VERSION] - YYYY-MM-DD
 
-### Added/Changed/Fixed
-- (content from [Unreleased] goes here)
-```
-
-If `[Unreleased]` is empty, add a minimal placeholder:
-```markdown
-## [NEW_VERSION] - YYYY-MM-DD
+### Added
+...
 
 ### Changed
-- Maintenance release.
+...
+
+### Fixed
+...
 ```
 
-## Step 6 — Build and verify
+Leave `## [Unreleased]` empty (or a blank line) under it for future work.
+
+### C4 — Build and pack
 
 ```bash
 dotnet build -c Release
-```
-
-Fix any build errors before continuing.
-
-## Step 7 — Pack
-
-```bash
 dotnet pack -c Release -o nupkgs/
 ```
 
-Confirm the new `.nupkg` file appears in `nupkgs/`.
+Confirm `nupkgs/RoeFactura.NEW_VERSION.nupkg` exists.
 
-## Step 8 — Commit
+### C5 — Commit version + changelog (if not already committed by merge)
+
+If merge did not include `.csproj` / `CHANGELOG.md` edits:
 
 ```bash
 git add RoEFactura/RoEFactura.csproj CHANGELOG.md
 git commit -m "chore(release): bump version to NEW_VERSION"
-git push -u origin r/NEW_VERSION
 ```
 
-## Step 9 — Push to NuGet.org
+Then:
 
 ```bash
-dotnet nuget push nupkgs/RoeFactura.NEW_VERSION.nupkg \
-  --api-key $NUGET_API_KEY \
+git push -u origin "r/NEW_VERSION"
+```
+
+### C6 — NuGet.org
+
+```bash
+dotnet nuget push "nupkgs/RoeFactura.NEW_VERSION.nupkg" \
+  --api-key "$NUGET_API_KEY" \
   --source https://api.nuget.org/v3/index.json \
   --skip-duplicate
 ```
 
-`NUGET_API_KEY` must be set in the environment. If not set, remind the user to export it:
-```bash
-export NUGET_API_KEY=your_key_here
-```
-
-`--skip-duplicate` prevents failure if the version was already published (safe to include always).
-
-## Step 10 — Tag and GitHub release (optional but recommended)
+### C7 — Tag and GitHub release
 
 ```bash
-git tag v/NEW_VERSION
-git push origin v/NEW_VERSION
+git tag -a "vNEW_VERSION" -m "vNEW_VERSION"
+git push origin "vNEW_VERSION"
 ```
 
-Then create a GitHub release via `gh`:
+Create the GitHub release with the **`## [NEW_VERSION] - …` block from `CHANGELOG.md` verbatim** as the release notes (copy that section into `gh` `--notes` or a temp file and pass `--notes-file`). Attach the nupkg:
+
 ```bash
-gh release create v/NEW_VERSION \
-  --title "v NEW_VERSION" \
-  --notes "$(sed -n '/## \[NEW_VERSION\]/,/## \[/p' CHANGELOG.md | head -n -1)" \
-  nupkgs/RoeFactura.NEW_VERSION.nupkg
+gh release create "vNEW_VERSION" \
+  --title "vNEW_VERSION" \
+  --notes-file /path/to/release-notes.md \
+  "nupkgs/RoeFactura.NEW_VERSION.nupkg"
 ```
 
-## Checklist
+If `gh` is unavailable, skip and tell the user to create the release manually.
 
-- [ ] New version confirmed with user
-- [ ] On branch `r/NEW_VERSION` based off `main`
-- [ ] `<Version>` updated in `.csproj` (no `-local` suffix)
-- [ ] CHANGELOG.md updated (`[Unreleased]` promoted to `[NEW_VERSION]`)
-- [ ] `dotnet build -c Release` passes
-- [ ] `dotnet pack` produced `nupkgs/RoeFactura.NEW_VERSION.nupkg`
-- [ ] Committed and pushed `r/NEW_VERSION`
-- [ ] NuGet push succeeded
-- [ ] Tag and GitHub release created
+### C8 — Done
+
+Print a short summary: branch, tag, NuGet package version, and links if known.
+
+---
+
+## Checklist (agent self-verify)
+
+- [ ] `NUGET_API_KEY` verified before approval
+- [ ] Semver bump justified from commit scan
+- [ ] Single approval obtained
+- [ ] `r/NEW_VERSION` includes merged `SOURCE_BRANCH` work
+- [ ] `.csproj` version and `CHANGELOG.md` updated
+- [ ] `dotnet build` / `dotnet pack` succeeded
+- [ ] Branch pushed; NuGet push succeeded
+- [ ] Tag `vNEW_VERSION` pushed; GitHub release created or skipped with reason
+
+---
 
 ## Notes
 
-- The NuGet package ID is `RoeFactura` (note: single-word, no hyphen).
-- Do not merge the release branch to `main` automatically — leave it open for hotfixes.
-- If pack produces packages for both net9.0 and net10.0, `dotnet pack` on the multi-targeted project still produces a single `.nupkg` with multiple TFMs inside — this is correct.
+- Package ID is **`RoeFactura`** (no hyphen).
+- Do not merge `r/*` into `main` automatically unless the user asks; release branches can stay open for hotfixes.
+- Multi-targeting (`net9.0` / `net10.0`) still yields **one** `.nupkg` per version.
+- If the analyzed branch should **not** be merged (e.g. release from `main` only), the user must say so before approval; otherwise default is merge `SOURCE_BRANCH` as in C1.
