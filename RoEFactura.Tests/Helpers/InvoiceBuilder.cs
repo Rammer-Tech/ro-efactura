@@ -58,7 +58,8 @@ public class InvoiceBuilder
 
     public InvoiceBuilder WithoutIssueDate()
     {
-        _invoice.IssueDate = null;
+        // UblSharp ignores null assignment; use default value to mean "no issue date" (see RoCiusUblValidator.HasValidIssueDate).
+        _invoice.IssueDate = new DateType { Value = default };
         return this;
     }
 
