@@ -8,6 +8,7 @@ using RoEFactura.Dtos;
 using RoEFactura.Extensions;
 using RoEFactura.Models;
 using RoEFactura.Services.Processing;
+using RoEFactura.Utilities;
 using UblSharp;
 
 namespace RoEFactura.Services.Api;
@@ -351,17 +352,23 @@ internal class AnafEInvoiceClient : IAnafEInvoiceClient
                 // Download and extract
                 await DownloadEInvoiceAsync(token, zipPath, extractPath, eInvoiceDownloadId);
 
-                // Find XML files in extracted directory
+                // Find XML files in extracted directory (skip ANAF signature sidecars, e.g. *semnatura*.xml)
                 string[] xmlFiles = Directory.GetFiles(extractPath, "*.xml", SearchOption.AllDirectories);
-                
-                if (!xmlFiles.Any())
+                string[] invoiceXmlFiles = xmlFiles
+                    .Where(f => !EInvoiceXmlFileFilter.IsSemnaturaXmlFileName(f))
+                    .OrderBy(f => Path.GetFileName(f), StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
+
+                if (!invoiceXmlFiles.Any())
                 {
-                    _logger.LogWarning("No XML files found in downloaded invoice {DownloadId}", eInvoiceDownloadId);
-                    return ProcessingResult<InvoiceType>.Failed("No XML files found in downloaded invoice");
+                    _logger.LogWarning(
+                        "No invoice XML in downloaded invoice {DownloadId} (missing, or only semnatura XML)",
+                        eInvoiceDownloadId);
+                    return ProcessingResult<InvoiceType>.Failed(
+                        "No invoice XML found in downloaded invoice (only semnatura sidecars or no XML)");
                 }
 
-                // Process the first XML file (assuming one invoice per download)
-                string xmlFile = xmlFiles.First();
+                string xmlFile = invoiceXmlFiles[0];
                 string xmlContent = await File.ReadAllTextAsync(xmlFile);
 
                 // Process through UBL pipeline

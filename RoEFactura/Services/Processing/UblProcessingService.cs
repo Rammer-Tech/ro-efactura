@@ -4,6 +4,7 @@ using FluentValidation.Results;
 using Microsoft.Extensions.Logging;
 using RoEFactura.Extensions;
 using RoEFactura.Models;
+using RoEFactura.Utilities;
 using UblSharp;
 
 namespace RoEFactura.Services.Processing;
@@ -236,13 +237,17 @@ internal class UblProcessingService : IUblProcessingService
             using MemoryStream stream = new MemoryStream(zipData);
             using ZipArchive archive = new ZipArchive(stream, ZipArchiveMode.Read);
 
-            // Look for XML files in the archive
-            ZipArchiveEntry? xmlEntry = archive.Entries.FirstOrDefault(e => 
-                e.Name.EndsWith(".xml", StringComparison.OrdinalIgnoreCase));
+            // Prefer invoice UBL XML; skip signature sidecars (*semnatura*.xml)
+            ZipArchiveEntry? xmlEntry = archive.Entries
+                .Where(e => e.Name.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)
+                            && !EInvoiceXmlFileFilter.IsSemnaturaXmlFileName(e.FullName))
+                .OrderBy(e => e.FullName, StringComparer.OrdinalIgnoreCase)
+                .FirstOrDefault();
 
             if (xmlEntry == null)
             {
-                return ProcessingResult<InvoiceType>.Failed("No XML file found in ZIP archive");
+                return ProcessingResult<InvoiceType>.Failed(
+                    "No invoice XML found in ZIP archive (only semnatura sidecars or no XML)");
             }
 
             using Stream xmlStream = xmlEntry.Open();
