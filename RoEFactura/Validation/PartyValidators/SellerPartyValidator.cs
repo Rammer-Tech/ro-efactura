@@ -14,16 +14,16 @@ public class SellerPartyValidator : AbstractValidator<SupplierPartyType>
             .WithErrorCode("BR-6")
             .WithMessage("Seller name is required.");
 
-        // Address validation for Romanian sellers
+        // Address validation for Romanian sellers (UblSharp never exposes null PostalAddress; check content)
         RuleFor(x => x)
-            .Must(x => x.Party?.PostalAddress != null)
+            .Must(x => HasMaterialPostalAddress(x.Party))
             .When(x => IsRomanianParty(x))
             .WithErrorCode("BR-8-ADDRESS")
             .WithMessage("Romanian seller must have a postal address.");
 
         // Ensure postal address exists (EN 16931 requirement)
         RuleFor(x => x)
-            .Must(x => x.Party?.PostalAddress != null)
+            .Must(x => HasMaterialPostalAddress(x.Party))
             .WithErrorCode("BR-8")
             .WithMessage("Seller postal address is required.");
 
@@ -51,5 +51,13 @@ public class SellerPartyValidator : AbstractValidator<SupplierPartyType>
     private static bool IsRomanianParty(SupplierPartyType party)
     {
         return party?.Party?.PostalAddress?.Country?.IdentificationCode?.Value == "RO";
+    }
+
+    private static bool HasMaterialPostalAddress(PartyType? party)
+    {
+        var addr = party?.PostalAddress;
+        if (addr == null) return false;
+        return !string.IsNullOrEmpty(addr.Country?.IdentificationCode?.Value)
+            || !string.IsNullOrEmpty(addr.CityName?.Value);
     }
 }

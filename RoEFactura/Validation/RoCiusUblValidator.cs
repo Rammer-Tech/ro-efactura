@@ -3,6 +3,7 @@ using FluentValidation;
 using RoEFactura.Validation.Constants;
 using RoEFactura.Validation.PartyValidators;
 using UblSharp;
+using UblSharp.CommonAggregateComponents;
 
 
 namespace RoEFactura.Validation;
@@ -77,7 +78,7 @@ public class RoCiusUblValidator : AbstractValidator<InvoiceType>
 
         RuleFor(x => x.PayeeParty)
             .SetValidator(new PayeePartyValidator()!)
-            .When(x => x.PayeeParty != null);
+            .When(x => IsPayeePartySpecified(x.PayeeParty));
 
         // Invoice lines validation
         RuleFor(x => x.InvoiceLine)
@@ -104,6 +105,40 @@ public class RoCiusUblValidator : AbstractValidator<InvoiceType>
             .Must(ValidateDecimalPrecision)
             .WithErrorCode("BR-RO-Z2")
             .WithMessage("Monetary amounts must have maximum 2 decimal places.");
+    }
+
+    /// <summary>
+    /// UblSharp initializes <see cref="InvoiceType.PayeeParty"/> with placeholder graphs (e.g. nested <see cref="PartyType.AgentParty"/> chains,
+    /// empty <see cref="PartyType.EndpointID"/>, <see cref="AddressType"/> with empty country code). Only validate when real payee data exists.
+    /// </summary>
+    private static bool IsPayeePartySpecified(PartyType? party)
+    {
+        if (party == null) return false;
+        if (HasPayeeNameContent(party)) return true;
+        return party.PartyLegalEntity?.Count > 0
+            || party.PartyName?.Count > 0
+            || party.PartyTaxScheme?.Count > 0
+            || party.PartyIdentification?.Count > 0
+            || !string.IsNullOrEmpty(party.EndpointID?.Value)
+            || party.Person?.Count > 0
+            || (party.PostalAddress != null && HasPostalAddressContent(party.PostalAddress));
+    }
+
+    private static bool HasPayeeNameContent(PartyType party)
+    {
+        var registrationName = party.PartyLegalEntity?.FirstOrDefault()?.RegistrationName?.Value;
+        var partyName = party.PartyName?.FirstOrDefault()?.Name?.Value;
+        return !string.IsNullOrEmpty(registrationName) || !string.IsNullOrEmpty(partyName);
+    }
+
+    private static bool HasPostalAddressContent(AddressType address)
+    {
+        return !string.IsNullOrEmpty(address.StreetName?.Value)
+            || !string.IsNullOrEmpty(address.AdditionalStreetName?.Value)
+            || !string.IsNullOrEmpty(address.CityName?.Value)
+            || !string.IsNullOrEmpty(address.CountrySubentity?.Value)
+            || !string.IsNullOrEmpty(address.PostalZone?.Value)
+            || !string.IsNullOrEmpty(address.Country?.IdentificationCode?.Value);
     }
 
     private static bool ContainsDigit(string? invoiceNumber)
@@ -172,7 +207,8 @@ public class RoCiusUblValidator : AbstractValidator<InvoiceType>
 
     private static bool HasValidIssueDate(InvoiceType invoice)
     {
-        return invoice?.IssueDate?.Value != null;
+        // UblSharp DateType.Value is non-nullable; default(DateTimeOffset) is used when the date is absent.
+        return invoice?.IssueDate != null && invoice.IssueDate.Value != default;
     }
 
     private static bool HasValidTypeCode(InvoiceType invoice)
