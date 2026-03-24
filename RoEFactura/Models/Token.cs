@@ -1,6 +1,6 @@
-﻿using System.Text.Json.Serialization;
+using System.Text.Json.Serialization;
 
-namespace RoEFactura.Services.Authentication;
+namespace RoEFactura.Models;
 
 public class Token
 {

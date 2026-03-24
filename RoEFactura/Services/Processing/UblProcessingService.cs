@@ -4,6 +4,7 @@ using FluentValidation.Results;
 using Microsoft.Extensions.Logging;
 using RoEFactura.Extensions;
 using RoEFactura.Models;
+using RoEFactura.Utilities;
 using UblSharp;
 
 namespace RoEFactura.Services.Processing;
@@ -26,39 +27,60 @@ internal class UblProcessingService : IUblProcessingService
     /// <summary>
     /// Processes a UBL invoice from XML content
     /// </summary>
-    public async Task<ProcessingResult<InvoiceType>> ProcessInvoiceAsync(string xmlContent, string? anafDownloadId = null)
+    public async Task<ProcessingResult<InvoiceType>> ProcessInvoiceAsync(string xmlContent, string? anafDownloadId = null, bool skipValidation = false)
     {
         try
         {
-            _logger.LogInformation("Starting UBL invoice processing");
+            _logger.LogInformation("Starting UBL invoice processing for {AnafDownloadId}", anafDownloadId ?? "unknown");
 
             // 1. Parse UBL XML
-            InvoiceType? ublInvoice = UblSharpExtensions.LoadInvoiceFromXml(xmlContent);
+            InvoiceType? ublInvoice;
+            try
+            {
+                ublInvoice = UblSharpExtensions.LoadInvoiceFromXml(xmlContent);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex,
+                    "Exception parsing UBL XML for download {AnafDownloadId}. XML preview: {XmlPreview}",
+                    anafDownloadId, Truncate(xmlContent, 500));
+                return ProcessingResult<InvoiceType>.Failed($"XML parse error: {ex.Message}");
+            }
+
             if (ublInvoice == null)
             {
-                _logger.LogError("Failed to parse UBL XML");
+                _logger.LogError(
+                    "LoadInvoiceFromXml returned null for {AnafDownloadId}. XML preview: {XmlPreview}",
+                    anafDownloadId, Truncate(xmlContent, 500));
                 return ProcessingResult<InvoiceType>.Failed("Failed to parse UBL XML content");
             }
 
             _logger.LogInformation("UBL XML parsed successfully. Invoice: {InvoiceNumber}", ublInvoice.ID?.Value);
 
-            // 2. Validate against RO_CIUS rules
-            ValidationResult? validationResult = await _ublValidator.ValidateAsync(ublInvoice);
-            if (!validationResult.IsValid)
+            // 2. Validate against RO_CIUS rules (skipped for invoices already validated by ANAF SPV)
+            if (!skipValidation)
             {
-                _logger.LogWarning("UBL validation failed for invoice {InvoiceNumber}: {Errors}", 
-                    ublInvoice.ID?.Value, string.Join(", ", validationResult.Errors.Select(e => e.ErrorMessage)));
-                
-                return ProcessingResult<InvoiceType>.Failed(validationResult.Errors);
+                ValidationResult? validationResult = await _ublValidator.ValidateAsync(ublInvoice);
+                if (!validationResult.IsValid)
+                {
+                    _logger.LogWarning("UBL validation failed for invoice {InvoiceNumber}: {Errors}", 
+                        ublInvoice.ID?.Value, string.Join(", ", validationResult.Errors.Select(e => e.ErrorMessage)));
+                    
+                    return ProcessingResult<InvoiceType>.Failed(validationResult.Errors);
+                }
+
+                _logger.LogInformation("UBL validation passed for invoice {InvoiceNumber}", ublInvoice.ID?.Value);
+            }
+            else
+            {
+                _logger.LogInformation("UBL validation skipped for invoice {InvoiceNumber} (already validated by ANAF SPV)", ublInvoice.ID?.Value);
             }
 
-            _logger.LogInformation("UBL validation passed for invoice {InvoiceNumber}", ublInvoice.ID?.Value);
-            
             return ProcessingResult<InvoiceType>.Success(ublInvoice);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error processing UBL invoice");
+            _logger.LogError(ex, "Error processing UBL invoice {AnafDownloadId}", anafDownloadId);
             return ProcessingResult<InvoiceType>.Failed($"Processing error: {ex.Message}");
         }
     }
@@ -104,9 +126,24 @@ internal class UblProcessingService : IUblProcessingService
             _logger.LogInformation("Validating UBL XML");
 
             // Parse UBL XML
-            InvoiceType? ublInvoice = UblSharpExtensions.LoadInvoiceFromXml(xmlContent);
+            InvoiceType? ublInvoice;
+            try
+            {
+                ublInvoice = UblSharpExtensions.LoadInvoiceFromXml(xmlContent);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex,
+                    "Exception parsing UBL XML during validation. XML preview: {XmlPreview}",
+                    Truncate(xmlContent, 500));
+                return ProcessingResult<InvoiceType>.Failed($"XML parse error: {ex.Message}");
+            }
+
             if (ublInvoice == null)
             {
+                _logger.LogError(
+                    "LoadInvoiceFromXml returned null during validation. XML preview: {XmlPreview}",
+                    Truncate(xmlContent, 500));
                 return ProcessingResult<InvoiceType>.Failed("Failed to parse UBL XML content");
             }
 
@@ -130,7 +167,7 @@ internal class UblProcessingService : IUblProcessingService
     /// <summary>
     /// Processes UBL XML content and returns structured result
     /// </summary>
-    public async Task<ProcessingResult<InvoiceType>> ProcessInvoiceXmlAsync(byte[] xmlData, string fileName)
+    public async Task<ProcessingResult<InvoiceType>> ProcessInvoiceXmlAsync(byte[] xmlData, string fileName, bool skipValidation = false)
     {
         try
         {
@@ -138,7 +175,7 @@ internal class UblProcessingService : IUblProcessingService
             _logger.LogInformation("Processing UBL XML file: {FileName}", fileName);
             
             UpdateStats(stats => stats.TotalProcessed++);
-            ProcessingResult<InvoiceType> result = await ProcessInvoiceAsync(xmlContent);
+            ProcessingResult<InvoiceType> result = await ProcessInvoiceAsync(xmlContent, skipValidation: skipValidation);
             
             if (result.IsSuccess)
             {
@@ -200,13 +237,17 @@ internal class UblProcessingService : IUblProcessingService
             using MemoryStream stream = new MemoryStream(zipData);
             using ZipArchive archive = new ZipArchive(stream, ZipArchiveMode.Read);
 
-            // Look for XML files in the archive
-            ZipArchiveEntry? xmlEntry = archive.Entries.FirstOrDefault(e => 
-                e.Name.EndsWith(".xml", StringComparison.OrdinalIgnoreCase));
+            // Prefer invoice UBL XML; skip signature sidecars (*semnatura*.xml)
+            ZipArchiveEntry? xmlEntry = archive.Entries
+                .Where(e => e.Name.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)
+                            && !EInvoiceXmlFileFilter.IsSemnaturaXmlFileName(e.FullName))
+                .OrderBy(e => e.FullName, StringComparer.OrdinalIgnoreCase)
+                .FirstOrDefault();
 
             if (xmlEntry == null)
             {
-                return ProcessingResult<InvoiceType>.Failed("No XML file found in ZIP archive");
+                return ProcessingResult<InvoiceType>.Failed(
+                    "No invoice XML found in ZIP archive (only semnatura sidecars or no XML)");
             }
 
             using Stream xmlStream = xmlEntry.Open();
@@ -252,6 +293,12 @@ internal class UblProcessingService : IUblProcessingService
             _globalStats = new ProcessingStats();
             _logger.LogInformation("Processing statistics reset");
         }
+    }
+
+    private static string Truncate(string? value, int maxLength)
+    {
+        if (string.IsNullOrEmpty(value)) return "(empty)";
+        return value.Length <= maxLength ? value : value[..maxLength] + "...";
     }
 
     private static void UpdateStats(Action<ProcessingStats> updateAction)

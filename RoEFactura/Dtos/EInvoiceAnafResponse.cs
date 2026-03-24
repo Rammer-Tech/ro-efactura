@@ -28,4 +28,18 @@ public class EInvoiceAnafResponse
     [JsonProperty("id")]
     [JsonPropertyName("id")]
     public string Id { get; set; }
+
+    /// <summary>
+    /// CIF-ul emitentului facturii (seller/supplier).
+    /// </summary>
+    [JsonProperty("cif_emitent")]
+    [JsonPropertyName("cif_emitent")]
+    public string? SellerCif { get; set; }
+
+    /// <summary>
+    /// CIF-ul beneficiarului facturii (buyer/customer).
+    /// </summary>
+    [JsonProperty("cif_beneficiar")]
+    [JsonPropertyName("cif_beneficiar")]
+    public string? BuyerCif { get; set; }
 }

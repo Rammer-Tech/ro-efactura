@@ -37,7 +37,10 @@ public class SellerPartyValidator : AbstractValidator<SupplierPartyType>
 
     private static bool HasValidSellerName(SupplierPartyType party)
     {
-        return !string.IsNullOrEmpty(party?.Party?.PartyName?.FirstOrDefault()?.Name?.Value);
+        // Check RegistrationName (BT-27, mandatory) or PartyName (BT-28, optional)
+        var registrationName = party?.Party?.PartyLegalEntity?.FirstOrDefault()?.RegistrationName?.Value;
+        var partyName = party?.Party?.PartyName?.FirstOrDefault()?.Name?.Value;
+        return !string.IsNullOrEmpty(registrationName) || !string.IsNullOrEmpty(partyName);
     }
 
     private static bool HasValidLegalIdentifier(SupplierPartyType party)

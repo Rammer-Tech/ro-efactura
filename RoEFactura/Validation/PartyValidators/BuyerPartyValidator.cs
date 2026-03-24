@@ -37,7 +37,10 @@ public class BuyerPartyValidator : AbstractValidator<CustomerPartyType>
 
     private static bool HasValidBuyerName(CustomerPartyType party)
     {
-        return !string.IsNullOrEmpty(party?.Party?.PartyName?.FirstOrDefault()?.Name?.Value);
+        // Check RegistrationName (BT-44, mandatory) or PartyName (BT-45, optional)
+        var registrationName = party?.Party?.PartyLegalEntity?.FirstOrDefault()?.RegistrationName?.Value;
+        var partyName = party?.Party?.PartyName?.FirstOrDefault()?.Name?.Value;
+        return !string.IsNullOrEmpty(registrationName) || !string.IsNullOrEmpty(partyName);
     }
 
     private static bool IsRomanianParty(CustomerPartyType party)

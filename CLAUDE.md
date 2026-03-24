@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-RoEFactura is a .NET 9.0 library for integrating with the Romanian ANAF (National Agency for Fiscal Administration) e-invoicing system. It provides comprehensive eFactura integration including dual authentication methods (certificate-based and OAuth web flows), complete UBL 2.1 document processing with Romanian RO_CIUS validation, and advanced invoice processing capabilities through ANAF's REST API endpoints.
+RoEFactura is a .NET library (supporting .NET 9.0 and .NET 10) for integrating with the Romanian ANAF (National Agency for Fiscal Administration) e-invoicing system. It provides comprehensive eFactura integration including dual authentication methods (certificate-based and OAuth web flows), complete UBL 2.1 document processing with Romanian RO_CIUS validation, and advanced invoice processing capabilities through ANAF's REST API endpoints.
 
 ## Build and Development Commands
 
@@ -90,8 +90,8 @@ dotnet pack
 ### Key Dependencies
 
 - **Ardalis.GuardClauses**: Input validation and defensive programming
-- **Microsoft.Extensions.Hosting.Abstractions**: Environment detection
-- **Microsoft.Extensions.Http**: HTTP client factory and lifecycle management
+- **Microsoft.Extensions.Hosting.Abstractions**: Environment detection (9.0.6 for net9.0, 10.0.0+ for net10.0)
+- **Microsoft.Extensions.Http**: HTTP client factory and lifecycle management (9.0.6 for net9.0, 10.0.0+ for net10.0)
 - **Newtonsoft.Json**: JSON serialization for ANAF API responses
 - **UblSharp**: UBL 2.1 document parsing and manipulation
 - **UblSharp.Validation**: UBL document validation capabilities

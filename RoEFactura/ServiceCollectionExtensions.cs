@@ -1,6 +1,7 @@
 using FluentValidation;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using RoEFactura.Models;
 using RoEFactura.Services.Api;
 using RoEFactura.Services.Authentication;
@@ -15,6 +16,9 @@ public static class ServiceCollectionExtensions
 {
     public static IServiceCollection AddRoEFactura(this IServiceCollection services, IConfiguration? configuration = null)
     {
+        // Ensure logging is available (idempotent - safe if already registered)
+        services.AddLogging();
+
         // Register FluentValidation validators
         services.AddValidatorsFromAssemblyContaining<RoCiusUblValidator>();
         services.AddScoped<IValidator<InvoiceType>, RoCiusUblValidator>();
@@ -36,14 +40,6 @@ public static class ServiceCollectionExtensions
         return services;
     }
 
-    /// <summary>
-    /// Overload for backward compatibility without configuration
-    /// </summary>
-    public static IServiceCollection AddRoEFactura(this IServiceCollection services)
-    {
-        return AddRoEFactura(services, null);
-    }
-    
     /// <summary>
     /// Adds RoEFactura services with OAuth configuration
     /// </summary>

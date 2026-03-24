@@ -30,7 +30,10 @@ public class PayeePartyValidator : AbstractValidator<PartyType>
 
     private static bool HasValidPayeeName(PartyType party)
     {
-        return !string.IsNullOrEmpty(party?.PartyName?.FirstOrDefault()?.Name?.Value);
+        // Check RegistrationName (BT-59, mandatory) or PartyName (optional)
+        var registrationName = party?.PartyLegalEntity?.FirstOrDefault()?.RegistrationName?.Value;
+        var partyName = party?.PartyName?.FirstOrDefault()?.Name?.Value;
+        return !string.IsNullOrEmpty(registrationName) || !string.IsNullOrEmpty(partyName);
     }
 
     private static bool HasValidLegalRegistrationId(PartyType party)
