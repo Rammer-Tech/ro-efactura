@@ -239,7 +239,8 @@ if (!validationResult.IsSuccess)
 - Descriptive exceptions with error context
 
 ### **Development**
-- No test project currently exists in the solution
+- **Tests:** `RoEFactura.Tests` (xUnit, FluentAssertions, Moq) — run `dotnet test RoEFactura.Tests/RoEFactura.Tests.csproj`. XML fixtures live under `RoEFactura.Tests/Fixtures/` as embedded resources (`ZipBuilder.LoadFixture`).
+- **UblSharp:** `InvoiceType.PayeeParty` and other aggregates may be non-null placeholder graphs after deserialization; `RoCiusUblValidator` only runs `PayeePartyValidator` when `IsPayeePartySpecified` detects real content. Assigning `null` to some element properties is ignored — use sentinel values where tests need “missing” data (e.g. `IssueDate` with `default` `DateTimeOffset`). Monetary/address “cleared” fields often deserialize as empty objects (`Value` 0, empty strings) rather than `null`.
 - FluentValidation integration for extensible validation rules
 - Logging integration throughout the processing pipeline
 - Thread-safe processing statistics tracking
