@@ -217,6 +217,9 @@ TestReactApp/coverage/
 # Project Specific
 # ===========================
 
+## Git worktrees (secondary checkouts)
+.worktrees/
+
 ## Certificate files (security)
 *.pfx
 *.p12
