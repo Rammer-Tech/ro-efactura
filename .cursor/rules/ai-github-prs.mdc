@@ -1,0 +1,14 @@
+---
+description: GitHub PR workflow when the AI opens or merges pull requests
+alwaysApply: true
+---
+
+# AI-created pull requests (GitHub)
+
+When **you** (the AI assistant) open a pull request or complete one on behalf of the user:
+
+1. **Always use squash merge** when merging: `gh pr merge <N> --squash` (or Squash and merge in the GitHub UI). Do not merge with a plain merge commit unless the user explicitly overrides this rule.
+2. Prefer **`--delete-branch`** on merge when the remote feature branch is safe to remove and no worktree still depends on it; if `git` refuses because a worktree checks out that branch, tell the user to remove the worktree first, then delete the branch.
+3. After merge, **fast-forward local `main`** in the primary checkout (`git pull origin main`) so the default clone matches GitHub.
+
+This keeps history linear and matches team preference for AI-driven changes.
