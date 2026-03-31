@@ -44,6 +44,12 @@ public class AnafOAuthOptions
     /// Set to null or empty to omit the parameter.
     /// </summary>
     public string? Prompt { get; set; } = "login";
+
+    /// <summary>
+    /// OpenID Connect <c>nonce</c> for the authorize request (binds the response; use a fresh random value per request, e.g. UUID).
+    /// Set to null or empty to omit the parameter.
+    /// </summary>
+    public string? Nonce { get; set; }
     
     /// <summary>
     /// Validates the configuration

@@ -63,7 +63,8 @@ internal class AnafOAuthClient : IAnafOAuthClient
             redirectUri,
             state,
             includeTokenContentType: true,
-            prompt: null);
+            prompt: null,
+            nonce: null);
     }
 
     /// <summary>
@@ -82,7 +83,8 @@ internal class AnafOAuthClient : IAnafOAuthClient
             options.RedirectUri,
             state,
             options.IncludeTokenContentType,
-            string.IsNullOrWhiteSpace(options.Prompt) ? null : options.Prompt);
+            string.IsNullOrWhiteSpace(options.Prompt) ? null : options.Prompt,
+            string.IsNullOrWhiteSpace(options.Nonce) ? null : options.Nonce);
     }
 
     private static string BuildAuthorizationUrl(
@@ -91,7 +93,8 @@ internal class AnafOAuthClient : IAnafOAuthClient
         string redirectUri,
         string? state,
         bool includeTokenContentType,
-        string? prompt)
+        string? prompt,
+        string? nonce)
     {
         string url = $"{authorizeUrl}?" +
                      $"response_type=code&" +
@@ -111,6 +114,11 @@ internal class AnafOAuthClient : IAnafOAuthClient
         if (!string.IsNullOrWhiteSpace(prompt))
         {
             url += $"&prompt={Uri.EscapeDataString(prompt)}";
+        }
+
+        if (!string.IsNullOrWhiteSpace(nonce))
+        {
+            url += $"&nonce={Uri.EscapeDataString(nonce)}";
         }
 
         return url;
