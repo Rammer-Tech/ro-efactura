@@ -1,4 +1,4 @@
-﻿using System.Net;
+using System.Net;
 using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
@@ -57,24 +57,15 @@ internal class AnafOAuthClient : IAnafOAuthClient
     /// </summary>
     public string GenerateAuthorizationUrl(string clientId, string redirectUri, string? state = null)
     {
-        const string authorizeUrl = "https://logincert.anaf.ro/anaf-oauth2/v1/authorize";
-        
-        string url = $"{authorizeUrl}?" +
-                     $"response_type=code&" +
-                     $"client_id={Uri.EscapeDataString(clientId)}&" +
-                     $"redirect_uri={Uri.EscapeDataString(redirectUri)}";
-        
-        if (!string.IsNullOrEmpty(state))
-        {
-            url += $"&state={Uri.EscapeDataString(state)}";
-        }
-        
-        // Include token_content_type=jwt following SmartBill pattern
-        url += "&token_content_type=jwt";
-        
-        return url;
+        return BuildAuthorizationUrl(
+            authorizeUrl: "https://logincert.anaf.ro/anaf-oauth2/v1/authorize",
+            clientId,
+            redirectUri,
+            state,
+            includeTokenContentType: true,
+            prompt: null);
     }
-    
+
     /// <summary>
     /// Generates the OAuth authorization URL using configured options
     /// </summary>
@@ -84,9 +75,44 @@ internal class AnafOAuthClient : IAnafOAuthClient
         {
             throw new ArgumentException("Invalid OAuth options provided");
         }
-        
-        var url = GenerateAuthorizationUrl(options.ClientId, options.RedirectUri, state);
-        
+
+        return BuildAuthorizationUrl(
+            options.AuthorizeUrl,
+            options.ClientId,
+            options.RedirectUri,
+            state,
+            options.IncludeTokenContentType,
+            string.IsNullOrWhiteSpace(options.Prompt) ? null : options.Prompt);
+    }
+
+    private static string BuildAuthorizationUrl(
+        string authorizeUrl,
+        string clientId,
+        string redirectUri,
+        string? state,
+        bool includeTokenContentType,
+        string? prompt)
+    {
+        string url = $"{authorizeUrl}?" +
+                     $"response_type=code&" +
+                     $"client_id={Uri.EscapeDataString(clientId)}&" +
+                     $"redirect_uri={Uri.EscapeDataString(redirectUri)}";
+
+        if (!string.IsNullOrEmpty(state))
+        {
+            url += $"&state={Uri.EscapeDataString(state)}";
+        }
+
+        if (includeTokenContentType)
+        {
+            url += "&token_content_type=jwt";
+        }
+
+        if (!string.IsNullOrWhiteSpace(prompt))
+        {
+            url += $"&prompt={Uri.EscapeDataString(prompt)}";
+        }
+
         return url;
     }
     

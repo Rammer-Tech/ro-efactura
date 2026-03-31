@@ -37,6 +37,13 @@ public class AnafOAuthOptions
     /// Default: true (following SmartBill pattern)
     /// </summary>
     public bool IncludeTokenContentType { get; set; } = true;
+
+    /// <summary>
+    /// OAuth <c>prompt</c> query parameter for the ANAF logincert authorize endpoint.
+    /// Use <c>login</c> to force the authentication UI (fresh sign-in) per OpenID Connect semantics.
+    /// Set to null or empty to omit the parameter.
+    /// </summary>
+    public string? Prompt { get; set; } = "login";
     
     /// <summary>
     /// Validates the configuration
