@@ -1,5 +1,6 @@
 using System.Xml;
 using System.Xml.Serialization;
+using RoEFactura.Utilities;
 using UblSharp;
 
 namespace RoEFactura.Extensions;
@@ -16,13 +17,18 @@ namespace RoEFactura.Extensions;
 public static partial class UblSharpExtensions
 {
     /// <summary>
-    /// Loads an InvoiceType from XML string.
+    /// Loads an InvoiceType from XML string. Accepts UBL Invoice-2 roots directly and transparently
+    /// rewrites standalone UBL CreditNote-2 roots (ANAF SPV occasionally returns these for type 381)
+    /// into their Invoice-2 equivalent so downstream callers see a uniform <see cref="InvoiceType"/>.
     /// Throws on deserialization errors -- callers should catch and log with context.
     /// </summary>
     public static InvoiceType? LoadInvoiceFromXml(string xmlContent)
     {
         if (string.IsNullOrWhiteSpace(xmlContent))
             return null;
+
+        if (CreditNoteXmlRewriter.IsCreditNoteRoot(xmlContent))
+            xmlContent = CreditNoteXmlRewriter.RewriteToInvoice(xmlContent);
 
         // Let deserialization exceptions propagate -- callers need to know WHY parsing failed
         XmlSerializer serializer = new XmlSerializer(typeof(InvoiceType));
