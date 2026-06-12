@@ -60,6 +60,49 @@ internal class AnafEInvoiceClient : IAnafEInvoiceClient
         _uploadEndpoint = uploadEndpoint;
     }
 
+    /// <summary>
+    ///     Send + structured-log an ANAF HTTP exchange. Logs the request URL/method/token-fingerprint
+    ///     before sending and the response status/content-type/content-length/content-disposition on
+    ///     return. On non-2xx, also logs a body preview (truncated to 1 KB) so callers do not need
+    ///     to re-fetch the body for diagnostics.
+    /// </summary>
+    /// <param name="op">Short operation name used as a log prefix (e.g. "list", "download").</param>
+    /// <param name="request">Fully-formed request. Authorization header is logged as a fingerprint only.</param>
+    private async Task<HttpResponseMessage> SendAndLogAsync(string op, HttpRequestMessage request)
+    {
+        string url = request.RequestUri?.ToString() ?? "(no uri)";
+        string method = request.Method.Method;
+        string tokenFingerprint = "(none)";
+        if (request.Headers.Authorization is { Scheme: "Bearer", Parameter: { Length: > 12 } token })
+            tokenFingerprint = $"Bearer {token[..8]}…{token[^4..]} (len={token.Length})";
+
+        _logger.LogInformation(
+            "ANAF[{Op}] → {Method} {Url} auth={TokenFingerprint}",
+            op, method, url, tokenFingerprint);
+
+        HttpResponseMessage response = await _httpClient.SendAsync(request);
+
+        string mediaType = response.Content.Headers.ContentType?.MediaType ?? "(none)";
+        long? contentLength = response.Content.Headers.ContentLength;
+        bool hasCd = response.Content.Headers.ContentDisposition != null;
+
+        _logger.LogInformation(
+            "ANAF[{Op}] ← {Status} {Reason} content-type={MediaType} content-length={Length} content-disposition={HasCd}",
+            op, (int)response.StatusCode, response.ReasonPhrase, mediaType, contentLength, hasCd);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            string body = await response.Content.ReadAsStringAsync();
+            if (body.Length > 1024)
+                body = body[..1024] + "…";
+            _logger.LogWarning(
+                "ANAF[{Op}] non-success body: {Body}",
+                op, body);
+        }
+
+        return response;
+    }
+
     /// <inheritdoc/>
     public async Task<List<EInvoiceAnafResponse>> ListEInvoicesAsync(string token, int days, string cui,
         string filter = null)
@@ -84,12 +127,12 @@ internal class AnafEInvoiceClient : IAnafEInvoiceClient
 
         try
         {
-            HttpResponseMessage response =
-                await _httpClient.SendAsync(request);
+            HttpResponseMessage response = await SendAndLogAsync("list", request);
 
             if (!response.IsSuccessStatusCode)
             {
-                throw new Exception("Error downloading e-invoice. Response: " + response);
+                throw new HttpRequestException(
+                    $"ANAF list returned {(int)response.StatusCode} {response.ReasonPhrase} for cif={cui}.");
             }
 
             string content = await response.Content.ReadAsStringAsync();
@@ -136,12 +179,12 @@ internal class AnafEInvoiceClient : IAnafEInvoiceClient
 
         try
         {
-            HttpResponseMessage response =
-                await _httpClient.SendAsync(request);
+            HttpResponseMessage response = await SendAndLogAsync("list-paged", request);
 
             if (!response.IsSuccessStatusCode)
             {
-                throw new Exception("Error downloading e-invoice. Response: " + response);
+                throw new HttpRequestException(
+                    $"ANAF list-paged returned {(int)response.StatusCode} {response.ReasonPhrase} for cif={cui} page={page}.");
             }
 
             string content = await response.Content.ReadAsStringAsync();
@@ -184,17 +227,26 @@ internal class AnafEInvoiceClient : IAnafEInvoiceClient
             Headers = { { "Authorization", $"Bearer {token}" } }
         };
 
-        HttpResponseMessage response =
-            await _httpClient.SendAsync(request);
+        HttpResponseMessage response = await SendAndLogAsync("download", request);
 
         if (!response.IsSuccessStatusCode)
         {
-            throw new Exception("Error downloading e-invoice. Response: " + response);
+            throw new HttpRequestException(
+                $"ANAF download returned {(int)response.StatusCode} {response.ReasonPhrase} for id={eInvoiceDownloadId}.");
         }
 
         if (response.Content.Headers.ContentDisposition == null)
         {
-            return;
+            // ANAF returns 200 OK with a JSON error body (no Content-Disposition) for rate limits,
+            // scope rejections, etc. Surface the body instead of silently returning so the caller
+            // does not interpret an empty extract directory as "no invoice XML".
+            string mediaType = response.Content.Headers.ContentType?.MediaType ?? "(unknown)";
+            string bodyPreview = await response.Content.ReadAsStringAsync();
+            if (bodyPreview.Length > 500)
+                bodyPreview = bodyPreview[..500] + "…";
+            throw new InvalidOperationException(
+                $"ANAF download {eInvoiceDownloadId} returned {(int)response.StatusCode} with no Content-Disposition " +
+                $"(content-type: {mediaType}). Body preview: {bodyPreview}");
         }
 
         ContentDispositionHeaderValue contentDisposition = response.Content.Headers.ContentDisposition;
@@ -247,7 +299,7 @@ internal class AnafEInvoiceClient : IAnafEInvoiceClient
             Content = form
         };
 
-        HttpResponseMessage response = await _httpClient.SendAsync(request);
+        HttpResponseMessage response = await SendAndLogAsync("validate", request);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadAsStringAsync();
     }
@@ -272,7 +324,7 @@ internal class AnafEInvoiceClient : IAnafEInvoiceClient
             Content = form
         };
 
-        HttpResponseMessage response = await _httpClient.SendAsync(request);
+        HttpResponseMessage response = await SendAndLogAsync("validate", request);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadAsStringAsync();
     }
@@ -300,7 +352,7 @@ internal class AnafEInvoiceClient : IAnafEInvoiceClient
             Content = form
         };
 
-        HttpResponseMessage response = await _httpClient.SendAsync(request);
+        HttpResponseMessage response = await SendAndLogAsync("upload", request);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadAsStringAsync();
     }
@@ -325,7 +377,7 @@ internal class AnafEInvoiceClient : IAnafEInvoiceClient
             Content = form
         };
 
-        HttpResponseMessage response = await _httpClient.SendAsync(request);
+        HttpResponseMessage response = await SendAndLogAsync("upload", request);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadAsStringAsync();
     }
