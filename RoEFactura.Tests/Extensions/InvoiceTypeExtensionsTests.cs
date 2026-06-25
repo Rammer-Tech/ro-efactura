@@ -132,4 +132,48 @@ public class InvoiceTypeExtensionsTests
         var invoice = InvoiceBuilder.Valid().WithCustomizationId("wrong").Build();
         invoice.GetValidationSummary().Should().Contain("RO_CIUS");
     }
+
+    // ── GetPrecedingInvoiceId / GetPrecedingInvoiceIssueDate ─────────────────
+
+    [Fact]
+    public void GetPrecedingInvoiceId_WithBillingReference_ReturnsReferencedInvoiceId()
+    {
+        var invoice = InvoiceBuilder.Valid()
+            .WithBillingReference("ORIG-2024-001", new DateTime(2024, 6, 15))
+            .Build();
+
+        invoice.GetPrecedingInvoiceId().Should().Be("ORIG-2024-001");
+    }
+
+    [Fact]
+    public void GetPrecedingInvoiceIssueDate_WithBillingReference_ReturnsReferencedIssueDate()
+    {
+        var issueDate = new DateTime(2024, 6, 15);
+        var invoice = InvoiceBuilder.Valid()
+            .WithBillingReference("ORIG-2024-001", issueDate)
+            .Build();
+
+        invoice.GetPrecedingInvoiceIssueDate().Should().Be(new DateTimeOffset(issueDate));
+    }
+
+    [Fact]
+    public void GetPrecedingInvoiceId_WithoutBillingReference_ReturnsNull()
+    {
+        var invoice = InvoiceBuilder.Valid().Build();
+
+        invoice.GetPrecedingInvoiceId().Should().BeNull();
+        invoice.GetPrecedingInvoiceIssueDate().Should().BeNull();
+    }
+
+    [Fact]
+    public void GetPrecedingInvoiceIssueDate_WhenIssueDateIsMinValue_ReturnsNull()
+    {
+        var invoice = InvoiceBuilder.Valid()
+            .WithBillingReference("ORIG-2024-001")
+            .Build();
+        invoice.BillingReference![0].InvoiceDocumentReference!.IssueDate =
+            new DateType { Value = default };
+
+        invoice.GetPrecedingInvoiceIssueDate().Should().BeNull();
+    }
 }

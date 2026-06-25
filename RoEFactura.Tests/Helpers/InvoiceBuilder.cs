@@ -147,6 +147,22 @@ public class InvoiceBuilder
         return this;
     }
 
+    public InvoiceBuilder WithBillingReference(string precedingInvoiceId, DateTime? issueDate = null)
+    {
+        _invoice.BillingReference =
+        [
+            new BillingReferenceType
+            {
+                InvoiceDocumentReference = new DocumentReferenceType
+                {
+                    ID = new IdentifierType { Value = precedingInvoiceId },
+                    IssueDate = issueDate.HasValue ? new DateType { Value = issueDate.Value } : null
+                }
+            }
+        ];
+        return this;
+    }
+
     public InvoiceBuilder WithoutSellerName()
     {
         var party = _invoice.AccountingSupplierParty?.Party;

@@ -143,4 +143,28 @@ public static partial class InvoiceTypeExtensions
     {
         return invoice?.LegalMonetaryTotal?.LineExtensionAmount?.Value ?? 0m;
     }
+
+    /// <summary>
+    /// Gets the preceding invoice identifier (BT-25) from the first billing reference, if present.
+    /// </summary>
+    /// <param name="invoice">The UBL invoice document.</param>
+    /// <returns>The referenced invoice ID, or null when no billing reference exists.</returns>
+    public static string? GetPrecedingInvoiceId(this InvoiceType invoice)
+    {
+        return invoice?.BillingReference?.FirstOrDefault()?.InvoiceDocumentReference?.ID?.Value;
+    }
+
+    /// <summary>
+    /// Gets the preceding invoice issue date (BT-26) from the first billing reference, if present.
+    /// </summary>
+    /// <param name="invoice">The UBL invoice document.</param>
+    /// <returns>The referenced invoice issue date, or null when missing.</returns>
+    public static DateTimeOffset? GetPrecedingInvoiceIssueDate(this InvoiceType invoice)
+    {
+        var issueDate = invoice?.BillingReference?.FirstOrDefault()?.InvoiceDocumentReference?.IssueDate?.Value;
+        if (!issueDate.HasValue || issueDate.Value == default)
+            return null;
+
+        return issueDate.Value;
+    }
 }
