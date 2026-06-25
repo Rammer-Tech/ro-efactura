@@ -108,6 +108,12 @@ public class InvoiceBuilder
         return this;
     }
 
+    public InvoiceBuilder WithPrepaidAmount(decimal prepaid)
+    {
+        _invoice.LegalMonetaryTotal!.PrepaidAmount = new AmountType { Value = prepaid, currencyID = "RON" };
+        return this;
+    }
+
     public InvoiceBuilder WithoutTaxExclusiveAmount()
     {
         // UblSharp AmountType getters never return null; missing monetary amounts use no currencyID.

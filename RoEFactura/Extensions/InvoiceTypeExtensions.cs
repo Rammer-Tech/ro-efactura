@@ -52,7 +52,8 @@ public static partial class InvoiceTypeExtensions
     }
 
     /// <summary>
-    /// Gets the total amount due for payment
+    /// Gets the amount still owed after prepayments (BT-115 / PayableAmount).
+    /// For import gross totals use <see cref="GetTaxInclusiveAmount"/> instead.
     /// </summary>
     /// <example>
     /// <code>
@@ -62,6 +63,22 @@ public static partial class InvoiceTypeExtensions
     public static decimal GetTotalAmountDue(this InvoiceType invoice)
     {
         return invoice?.LegalMonetaryTotal?.PayableAmount?.Value ?? 0m;
+    }
+
+    /// <summary>
+    /// Gets the tax-inclusive invoice total before prepayments (BT-112 / TaxInclusiveAmount).
+    /// </summary>
+    public static decimal GetTaxInclusiveAmount(this InvoiceType invoice)
+    {
+        return invoice?.LegalMonetaryTotal?.TaxInclusiveAmount?.Value ?? 0m;
+    }
+
+    /// <summary>
+    /// Gets the tax-exclusive invoice total (BT-109 / TaxExclusiveAmount).
+    /// </summary>
+    public static decimal GetTaxExclusiveAmount(this InvoiceType invoice)
+    {
+        return invoice?.LegalMonetaryTotal?.TaxExclusiveAmount?.Value ?? 0m;
     }
 
     /// <summary>
@@ -113,19 +130,19 @@ public static partial class InvoiceTypeExtensions
     }
 
     /// <summary>
-    /// Gets the invoice total without VAT
+    /// Gets the invoice total without VAT (alias for <see cref="GetTaxExclusiveAmount"/>).
     /// </summary>
     public static decimal GetTotalWithoutVat(this InvoiceType invoice)
     {
-        return invoice?.LegalMonetaryTotal?.TaxExclusiveAmount?.Value ?? 0m;
+        return invoice.GetTaxExclusiveAmount();
     }
 
     /// <summary>
-    /// Gets the invoice total with VAT
+    /// Gets the invoice total with VAT (alias for <see cref="GetTaxInclusiveAmount"/>).
     /// </summary>
     public static decimal GetTotalWithVat(this InvoiceType invoice)
     {
-        return invoice?.LegalMonetaryTotal?.TaxInclusiveAmount?.Value ?? 0m;
+        return invoice.GetTaxInclusiveAmount();
     }
 
     /// <summary>

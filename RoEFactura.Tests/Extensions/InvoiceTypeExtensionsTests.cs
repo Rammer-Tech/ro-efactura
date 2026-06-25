@@ -73,19 +73,21 @@ public class InvoiceTypeExtensionsTests
         invoice.GetTotalAmountDue().Should().Be(0m);
     }
 
-    // ── GetTotalWithoutVat / GetTotalWithVat / GetTotalVat ───────────────────
+    // ── GetTaxInclusiveAmount / GetTaxExclusiveAmount / GetTotalVat ──────────
 
     [Fact]
-    public void GetTotalWithoutVat_ReturnsTaxExclusiveAmount()
+    public void GetTaxExclusiveAmount_ReturnsTaxExclusiveAmount()
     {
         var invoice = InvoiceBuilder.Valid().WithTotals(100m, 119m, 119m).Build();
+        invoice.GetTaxExclusiveAmount().Should().Be(100m);
         invoice.GetTotalWithoutVat().Should().Be(100m);
     }
 
     [Fact]
-    public void GetTotalWithVat_ReturnsTaxInclusiveAmount()
+    public void GetTaxInclusiveAmount_ReturnsTaxInclusiveAmount()
     {
         var invoice = InvoiceBuilder.Valid().WithTotals(100m, 119m, 119m).Build();
+        invoice.GetTaxInclusiveAmount().Should().Be(119m);
         invoice.GetTotalWithVat().Should().Be(119m);
     }
 
@@ -94,6 +96,46 @@ public class InvoiceTypeExtensionsTests
     {
         var invoice = InvoiceBuilder.Valid().Build();
         invoice.GetTotalVat().Should().Be(19m);
+    }
+
+    [Fact]
+    public void GetTaxInclusiveAmount_WhenFullyPaid_PayableZero_ReturnsGrossNotPayable()
+    {
+        // PayableAmount=0 (fully prepaid) but TaxInclusive reflects the real invoice value.
+        var invoice = InvoiceBuilder.Valid()
+            .WithTotals(17438.02m, 21100m, 0m)
+            .WithPrepaidAmount(21100m)
+            .WithTaxTotalAmount(3661.98m)
+            .Build();
+
+        invoice.GetTotalAmountDue().Should().Be(0m);
+        invoice.GetTaxInclusiveAmount().Should().Be(21100m);
+        invoice.GetTaxExclusiveAmount().Should().Be(17438.02m);
+        invoice.GetTotalVat().Should().Be(3661.98m);
+    }
+
+    [Fact]
+    public void GetTaxInclusiveAmount_WhenPartiallyPrepaid_ReturnsFullGrossRegardlessOfPayable()
+    {
+        // Vodafone-like: partial prepayment reduces PayableAmount but not TaxInclusive.
+        var invoice = InvoiceBuilder.Valid()
+            .WithTotals(757.45m, 916.51m, 813.25m)
+            .WithPrepaidAmount(103.26m)
+            .WithTaxTotalAmount(159.06m)
+            .Build();
+
+        invoice.GetTotalAmountDue().Should().Be(813.25m);
+        invoice.GetTaxInclusiveAmount().Should().Be(916.51m);
+        invoice.GetTaxExclusiveAmount().Should().Be(757.45m);
+        invoice.GetTotalVat().Should().Be(159.06m);
+    }
+
+    [Fact]
+    public void GetTaxInclusiveAmount_WhenUnpaid_MatchesPayableAmount()
+    {
+        var invoice = InvoiceBuilder.Valid().WithTotals(100m, 119m, 119m).Build();
+
+        invoice.GetTaxInclusiveAmount().Should().Be(invoice.GetTotalAmountDue());
     }
 
     // ── GetValidationSummary ─────────────────────────────────────────────────
