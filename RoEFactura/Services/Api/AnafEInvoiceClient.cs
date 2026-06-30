@@ -238,10 +238,17 @@ internal class AnafEInvoiceClient : IAnafEInvoiceClient
         if (response.Content.Headers.ContentDisposition == null)
         {
             // ANAF returns 200 OK with a JSON error body (no Content-Disposition) for rate limits,
-            // scope rejections, etc. Surface the body instead of silently returning so the caller
-            // does not interpret an empty extract directory as "no invoice XML".
+            // scope rejections, expired download windows, etc. Surface the body instead of silently
+            // returning so the caller does not interpret an empty extract directory as "no invoice XML".
             string mediaType = response.Content.Headers.ContentType?.MediaType ?? "(unknown)";
-            string bodyPreview = await response.Content.ReadAsStringAsync();
+            string body = await response.Content.ReadAsStringAsync();
+
+            if (AnafDownloadErrorParser.TryGetDownloadWindowExpiredMessage(body, out string? expiredMessage))
+            {
+                throw new AnafDownloadWindowExpiredException(eInvoiceDownloadId, expiredMessage);
+            }
+
+            string bodyPreview = body;
             if (bodyPreview.Length > 500)
                 bodyPreview = bodyPreview[..500] + "…";
             throw new InvalidOperationException(
@@ -449,6 +456,10 @@ internal class AnafEInvoiceClient : IAnafEInvoiceClient
                     }
                 }
             }
+        }
+        catch (AnafDownloadWindowExpiredException)
+        {
+            throw;
         }
         catch (Exception ex)
         {

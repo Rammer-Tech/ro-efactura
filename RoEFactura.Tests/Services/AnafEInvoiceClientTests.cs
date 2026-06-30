@@ -6,6 +6,7 @@ using Moq;
 using Moq.Protected;
 using Newtonsoft.Json;
 using RoEFactura.Dtos;
+using RoEFactura.Models;
 using RoEFactura.Services.Api;
 using RoEFactura.Services.Processing;
 using RoEFactura.Validation;
@@ -231,5 +232,53 @@ public class AnafEInvoiceClientTests
         var (client, _) = CreateClientWithHttp();
         await Assert.ThrowsAsync<ArgumentNullException>(() =>
             client.ValidateXmlContentAsync(FakeToken, null!));
+    }
+
+    [Theory]
+    [InlineData("{\"eroare\":\"Fisierul nu mai poate fi descarcat pentru ca a trecut perioada de 60 de zile in care este disponibil\"}")]
+    [InlineData("Fisierul nu mai poate fi descarcat pentru ca a trecut perioada de 60 de zile")]
+    public void AnafDownloadErrorParser_DetectsDownloadWindowExpired(string body)
+    {
+        AnafDownloadErrorParser.TryGetDownloadWindowExpiredMessage(body, out string? message)
+            .Should().BeTrue();
+        message.Should().NotBeNullOrWhiteSpace();
+    }
+
+    [Fact]
+    public async Task ProcessDownloadedInvoiceAsync_WhenAnafReturnsExpiredJson_ThrowsDownloadWindowExpired()
+    {
+        const string downloadId = "7298863146";
+        var expiredJson =
+            "{\"eroare\":\"Fisierul nu mai poate fi descarcat pentru ca a trecut perioada de 60 de zile in care este disponibil\"}";
+
+        var handlerMock = new Mock<HttpMessageHandler>(MockBehavior.Strict);
+        handlerMock.Protected()
+            .Setup<Task<HttpResponseMessage>>(
+                "SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
+                ItExpr.IsAny<CancellationToken>())
+            .ReturnsAsync(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(expiredJson, System.Text.Encoding.UTF8, "text/plain")
+            });
+
+        var httpClient = new HttpClient(handlerMock.Object);
+        var validator = new RoCiusUblValidator();
+        var processingService = new UblProcessingService(
+            validator,
+            NullLogger<UblProcessingService>.Instance);
+        var env = new Mock<IHostEnvironment>();
+        env.Setup(e => e.EnvironmentName).Returns("Production");
+
+        var client = new AnafEInvoiceClient(
+            httpClient,
+            env.Object,
+            processingService,
+            NullLogger<AnafEInvoiceClient>.Instance);
+
+        var act = () => client.ProcessDownloadedInvoiceAsync(FakeToken, downloadId);
+
+        var ex = await act.Should().ThrowAsync<AnafDownloadWindowExpiredException>();
+        ex.Which.AnafDownloadId.Should().Be(downloadId);
     }
 }
