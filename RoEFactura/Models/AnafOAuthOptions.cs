@@ -6,6 +6,16 @@ namespace RoEFactura.Models;
 public class AnafOAuthOptions
 {
     /// <summary>
+    /// Default ANAF OAuth authorization endpoint URL.
+    /// </summary>
+    public const string DefaultAuthorizeUrl = "https://logincert.anaf.ro/anaf-oauth2/v1/authorize";
+
+    /// <summary>
+    /// Default ANAF OAuth token endpoint URL.
+    /// </summary>
+    public const string DefaultTokenUrl = "https://logincert.anaf.ro/anaf-oauth2/v1/token";
+
+    /// <summary>
     /// ANAF OAuth Client ID
     /// </summary>
     public string ClientId { get; set; } = string.Empty;
@@ -24,13 +34,13 @@ public class AnafOAuthOptions
     /// ANAF authorization endpoint URL
     /// Default: https://logincert.anaf.ro/anaf-oauth2/v1/authorize
     /// </summary>
-    public string AuthorizeUrl { get; set; } = "https://logincert.anaf.ro/anaf-oauth2/v1/authorize";
-    
+    public string AuthorizeUrl { get; set; } = DefaultAuthorizeUrl;
+
     /// <summary>
     /// ANAF token endpoint URL
     /// Default: https://logincert.anaf.ro/anaf-oauth2/v1/token
     /// </summary>
-    public string TokenUrl { get; set; } = "https://logincert.anaf.ro/anaf-oauth2/v1/token";
+    public string TokenUrl { get; set; } = DefaultTokenUrl;
     
     /// <summary>
     /// Whether to include token_content_type=jwt parameter

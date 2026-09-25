@@ -1,9 +1,11 @@
+using System.Collections.Specialized;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json;
+using System.Web;
 using Microsoft.Extensions.Logging;
 using RoEFactura.Models;
 
@@ -58,7 +60,7 @@ internal class AnafOAuthClient : IAnafOAuthClient
     public string GenerateAuthorizationUrl(string clientId, string redirectUri, string? state = null)
     {
         return BuildAuthorizationUrl(
-            authorizeUrl: "https://logincert.anaf.ro/anaf-oauth2/v1/authorize",
+            authorizeUrl: AnafOAuthOptions.DefaultAuthorizeUrl,
             clientId,
             redirectUri,
             state,
@@ -125,183 +127,167 @@ internal class AnafOAuthClient : IAnafOAuthClient
     }
     
     /// <summary>
-    /// Exchanges an authorization code for access token
+    /// Posts a token request (authorization-code exchange or refresh) to <paramref name="tokenUrl"/> with HTTP Basic
+    /// client authentication, classifies non-2xx responses into a <see cref="TokenExchangeErrorType"/>, and parses a
+    /// successful response into a <see cref="Token"/>. Never logs the request body, the response body or token values.
     /// </summary>
-   public async Task<Token> ExchangeAuthorizationCodeAsync(string code, string clientId, string clientSecret, string redirectUri)
-{
-    // Validate input parameters early
-    if (string.IsNullOrWhiteSpace(code))
-        throw new ArgumentNullException(nameof(code), "Authorization code cannot be null or empty");
-    if (string.IsNullOrWhiteSpace(clientId))
-        throw new ArgumentNullException(nameof(clientId), "Client ID cannot be null or empty");
-    if (string.IsNullOrWhiteSpace(clientSecret))
-        throw new ArgumentNullException(nameof(clientSecret), "Client secret cannot be null or empty");
-    if (string.IsNullOrWhiteSpace(redirectUri))
-        throw new ArgumentNullException(nameof(redirectUri), "Redirect URI cannot be null or empty");
-
-    const string tokenUrl = "https://logincert.anaf.ro/anaf-oauth2/v1/token";
-    
-    HttpClient? client = null;
-    try
+    private async Task<Token> RequestTokenAsync(
+        string operation,
+        string tokenUrl,
+        string clientId,
+        string clientSecret,
+        IEnumerable<KeyValuePair<string, string>> form,
+        CancellationToken ct)
     {
-        client = _httpClientFactory.CreateClient();
-        
+        HttpClient client = _httpClientFactory.CreateClient();
+
         // Configure timeout if not already set by the factory
         if (client.Timeout == TimeSpan.FromSeconds(100)) // Default timeout
         {
             client.Timeout = TimeSpan.FromSeconds(30); // More reasonable timeout
         }
-        
-        // Use Basic authentication header
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, tokenUrl)
+        {
+            Content = new FormUrlEncodedContent(form),
+        };
+
         string authValue = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{clientId}:{clientSecret}"));
-        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", authValue);
-        
-        // Prepare form-urlencoded body
-        string formData = $"grant_type=authorization_code&" +
-                          $"code={Uri.EscapeDataString(code)}&" +
-                          $"client_id={Uri.EscapeDataString(clientId)}&" +
-                          $"client_secret={Uri.EscapeDataString(clientSecret)}&" +
-                          $"redirect_uri={redirectUri}&" +
-                          $"token_content_type=jwt";
-        
-        using var content = new StringContent(formData, Encoding.UTF8, "application/x-www-form-urlencoded");
-        
-        HttpResponseMessage? response = null;
-        string? responseContent = null;
-        
+        request.Headers.Authorization = new AuthenticationHeaderValue("Basic", authValue);
+
+        HttpResponseMessage response;
+        string responseContent;
         try
         {
-            response = await client.PostAsync(tokenUrl, content);
-            responseContent = await response.Content.ReadAsStringAsync();
+            response = await client.SendAsync(request, ct).ConfigureAwait(false);
+            responseContent = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
         }
         catch (HttpRequestException httpEx)
         {
             // Network-related errors (DNS, connection refused, etc.)
-            _logger?.LogError(httpEx, "Network error during token exchange");
+            _logger.LogWarning(httpEx, "ANAF OAuth {Operation} failed: network error", operation);
             throw new TokenExchangeException(
                 "Failed to connect to the OAuth server. Please check your network connection.",
                 TokenExchangeErrorType.NetworkError,
                 httpEx);
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (TaskCanceledException tcEx)
         {
-            // Timeout occurred
-            _logger?.LogError(tcEx, "Request timeout during token exchange");
+            // Timeout occurred (not caller-requested cancellation)
+            _logger.LogWarning(tcEx, "ANAF OAuth {Operation} failed: timeout", operation);
             throw new TokenExchangeException(
                 $"The request to the OAuth server timed out after {client.Timeout.TotalSeconds} seconds.",
                 TokenExchangeErrorType.Timeout,
                 tcEx);
         }
-        
+
         // Handle non-success status codes with detailed error info
         if (!response.IsSuccessStatusCode)
         {
-            _logger?.LogError("Token exchange failed with status {StatusCode}: {Response}", 
-                response.StatusCode, responseContent);
-            
-            // Try to parse error response if it's JSON
-            string? errorDescription = null;
+            // Try to parse error response if it's JSON; best-effort only
             string? errorCode = null;
-            
+            string? errorDescription = null;
             try
             {
-                var errorResponse = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
-                    responseContent ?? string.Empty,
-                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-                
-                if (errorResponse != null)
+                using JsonDocument errorDocument = JsonDocument.Parse(responseContent);
+                if (errorDocument.RootElement.TryGetProperty("error", out JsonElement errorElement))
                 {
-                    errorCode = errorResponse.ContainsKey("error") ? 
-                        errorResponse["error"].GetString() : null;
-                    errorDescription = errorResponse.ContainsKey("error_description") ? 
-                        errorResponse["error_description"].GetString() : null;
+                    errorCode = errorElement.GetString();
+                }
+
+                if (errorDocument.RootElement.TryGetProperty("error_description", out JsonElement descriptionElement))
+                {
+                    errorDescription = descriptionElement.GetString();
                 }
             }
-            catch
+            catch (JsonException)
             {
-                // If we can't parse the error response, we'll just use the raw content
+                // If we can't parse the error response, we proceed with nulls.
             }
-            
-            TokenExchangeErrorType errorType = response.StatusCode switch
+
+            TokenExchangeErrorType errorType = (response.StatusCode, errorCode) switch
             {
-                HttpStatusCode.Unauthorized => TokenExchangeErrorType.AuthenticationFailed,
-                HttpStatusCode.BadRequest => TokenExchangeErrorType.InvalidRequest,
-                HttpStatusCode.TooManyRequests => TokenExchangeErrorType.RateLimited,
-                HttpStatusCode.ServiceUnavailable => TokenExchangeErrorType.ServiceUnavailable,
-                HttpStatusCode.InternalServerError => TokenExchangeErrorType.ServerError,
-                _ => TokenExchangeErrorType.UnknownError
+                (HttpStatusCode.BadRequest, "invalid_grant") => TokenExchangeErrorType.InvalidGrant,
+                (HttpStatusCode.BadRequest, _) => TokenExchangeErrorType.InvalidRequest,
+                (HttpStatusCode.Unauthorized, _) => TokenExchangeErrorType.AuthenticationFailed,
+                (HttpStatusCode.TooManyRequests, _) => TokenExchangeErrorType.RateLimited,
+                (HttpStatusCode.ServiceUnavailable, _) => TokenExchangeErrorType.ServiceUnavailable,
+                (HttpStatusCode.InternalServerError, _) => TokenExchangeErrorType.ServerError,
+                _ => TokenExchangeErrorType.UnknownError,
             };
-            
+
+            _logger.LogWarning(
+                "ANAF OAuth {Operation} failed: status {StatusCode}, error {ErrorCode}",
+                operation,
+                (int)response.StatusCode,
+                errorCode ?? "(none)");
+
             throw new TokenExchangeException(
-                $"Token exchange failed: {errorCode ?? response.StatusCode.ToString()}. " +
-                $"{errorDescription ?? responseContent}",
+                $"Token {operation} failed: {errorCode ?? response.StatusCode.ToString()}. {errorDescription}",
                 errorType,
                 statusCode: response.StatusCode,
                 serverResponse: responseContent);
         }
-        
-        // Parse the successful response
+
+        Token token = ParseTokenResponse(responseContent);
+
+        _logger.LogInformation(
+            "ANAF OAuth {Operation} succeeded (expires_in={ExpiresIn}s)", operation, token.ExpiresIn);
+
+        return token;
+    }
+
+    /// <summary>
+    /// Parses a successful ANAF token endpoint response body into a <see cref="Token"/> and stamps
+    /// <see cref="Token.IssuedAtUtc"/>. Shared between the OAuth-redirect flow and the certificate flow.
+    /// Never includes the response body in a thrown exception: a success body may contain live tokens.
+    /// </summary>
+    private static Token ParseTokenResponse(string responseContent)
+    {
         try
         {
-            var options = new JsonSerializerOptions
+            using JsonDocument document = JsonDocument.Parse(responseContent);
+            JsonElement root = document.RootElement;
+
+            if (!root.TryGetProperty("access_token", out JsonElement accessTokenElement) ||
+                accessTokenElement.ValueKind != JsonValueKind.String ||
+                string.IsNullOrWhiteSpace(accessTokenElement.GetString()))
             {
-                PropertyNameCaseInsensitive = true
-            };
-            
-            var tokenResponse = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
-                responseContent ?? string.Empty, options);
-            
-            if (tokenResponse == null)
-            {
-                throw new TokenExchangeException(
-                    "Received null or empty response from OAuth server",
-                    TokenExchangeErrorType.InvalidResponse,
-                    serverResponse: responseContent);
-            }
-            
-            // Validate required fields
-            if (!tokenResponse.ContainsKey("access_token"))
-            {
-                _logger?.LogError("Token response missing access_token: {Response}", responseContent);
                 throw new TokenExchangeException(
                     "Invalid token response: missing access_token field",
-                    TokenExchangeErrorType.InvalidResponse,
-                    serverResponse: responseContent);
+                    TokenExchangeErrorType.InvalidResponse);
             }
-            
-            string? accessToken = tokenResponse["access_token"].GetString();
-            if (string.IsNullOrWhiteSpace(accessToken))
+
+            string accessToken = accessTokenElement.GetString()!;
+
+            string? refreshToken = root.TryGetProperty("refresh_token", out JsonElement refreshTokenElement)
+                ? refreshTokenElement.GetString()
+                : null;
+
+            int expiresIn = 3600; // Default to 1 hour
+            if (root.TryGetProperty("expires_in", out JsonElement expiresInElement))
             {
-                throw new TokenExchangeException(
-                    "Received empty access token from OAuth server",
-                    TokenExchangeErrorType.InvalidResponse,
-                    serverResponse: responseContent);
-            }
-            
-            // Extract optional fields with safe defaults
-            var refreshToken = tokenResponse.TryGetValue("refresh_token", out JsonElement value) ? value.GetString() : null;
-            
-            var expiresIn = 3600; // Default to 1 hour
-            if (tokenResponse.ContainsKey("expires_in"))
-            {
-                try
+                if (expiresInElement.ValueKind == JsonValueKind.Number && expiresInElement.TryGetInt32(out int numericExpiresIn))
                 {
-                    expiresIn = tokenResponse["expires_in"].GetInt32();
+                    expiresIn = numericExpiresIn;
                 }
-                catch (InvalidOperationException)
+                else if (expiresInElement.ValueKind == JsonValueKind.String &&
+                         int.TryParse(expiresInElement.GetString(), out int parsedExpiresIn))
                 {
-                    _logger?.LogWarning("Could not parse expires_in value, using default of 3600 seconds");
+                    expiresIn = parsedExpiresIn;
                 }
             }
-            
-            string tokenType = tokenResponse.ContainsKey("token_type") ? 
-                tokenResponse["token_type"].GetString() ?? "Bearer" : "Bearer";
-            
-            string? scope = tokenResponse.ContainsKey("scope") ? 
-                tokenResponse["scope"].GetString() : null;
-            
-            _logger?.LogInformation("Successfully exchanged authorization code for access token");
-            
+
+            string tokenType = root.TryGetProperty("token_type", out JsonElement tokenTypeElement)
+                ? tokenTypeElement.GetString() ?? "Bearer"
+                : "Bearer";
+
+            string? scope = root.TryGetProperty("scope", out JsonElement scopeElement) ? scopeElement.GetString() : null;
+
             return new Token
             {
                 AccessToken = accessToken,
@@ -309,63 +295,131 @@ internal class AnafOAuthClient : IAnafOAuthClient
                 ExpiresIn = expiresIn,
                 TokenType = tokenType,
                 Scope = scope ?? string.Empty,
+                IssuedAtUtc = DateTimeOffset.UtcNow,
             };
+        }
+        catch (TokenExchangeException)
+        {
+            throw;
         }
         catch (JsonException jsonEx)
         {
-            _logger?.LogError(jsonEx, "Failed to parse token response JSON: {Response}", responseContent);
             throw new TokenExchangeException(
                 "Failed to parse token response from OAuth server",
                 TokenExchangeErrorType.InvalidResponse,
-                jsonEx,
-                serverResponse: responseContent);
+                jsonEx);
         }
-        catch (InvalidOperationException ioEx) when (ioEx.Message.Contains("JsonElement"))
+        catch (InvalidOperationException ioEx)
         {
-            _logger?.LogError(ioEx, "Failed to extract values from token response: {Response}", responseContent);
             throw new TokenExchangeException(
                 "Token response contained unexpected data types",
                 TokenExchangeErrorType.InvalidResponse,
-                ioEx,
-                serverResponse: responseContent);
+                ioEx);
         }
     }
-    catch (TokenExchangeException)
+
+    /// <summary>
+    /// Exchanges an authorization code for access token
+    /// </summary>
+    public async Task<Token> ExchangeAuthorizationCodeAsync(string code, string clientId, string clientSecret, string redirectUri)
     {
-        // Re-throw our custom exceptions as-is
-        throw;
+        // Validate input parameters early
+        if (string.IsNullOrWhiteSpace(code))
+            throw new ArgumentNullException(nameof(code), "Authorization code cannot be null or empty");
+        if (string.IsNullOrWhiteSpace(clientId))
+            throw new ArgumentNullException(nameof(clientId), "Client ID cannot be null or empty");
+        if (string.IsNullOrWhiteSpace(clientSecret))
+            throw new ArgumentNullException(nameof(clientSecret), "Client secret cannot be null or empty");
+        if (string.IsNullOrWhiteSpace(redirectUri))
+            throw new ArgumentNullException(nameof(redirectUri), "Redirect URI cannot be null or empty");
+
+        var form = new List<KeyValuePair<string, string>>
+        {
+            new("grant_type", "authorization_code"),
+            new("code", code),
+            new("client_id", clientId),
+            new("client_secret", clientSecret),
+            new("redirect_uri", redirectUri),
+            new("token_content_type", "jwt"),
+        };
+
+        return await RequestTokenAsync(
+            "exchange", AnafOAuthOptions.DefaultTokenUrl, clientId, clientSecret, form, CancellationToken.None).ConfigureAwait(false);
     }
-    catch (ArgumentNullException)
-    {
-        // Re-throw argument validation exceptions
-        throw;
-    }
-    catch (Exception ex)
-    {
-        // Catch any unexpected exceptions
-        _logger?.LogError(ex, "Unexpected error during token exchange");
-        throw new TokenExchangeException(
-            "An unexpected error occurred during token exchange",
-            TokenExchangeErrorType.UnknownError,
-            ex);
-    }
-}
 
     /// <summary>
     /// Exchanges an authorization code for access token using configured options
     /// </summary>
-    public async Task<Token> ExchangeAuthorizationCodeAsync(string code, AnafOAuthOptions options)
+    public Task<Token> ExchangeAuthorizationCodeAsync(string code, AnafOAuthOptions options)
+        => ExchangeAuthorizationCodeAsync(code, options, CancellationToken.None);
+
+    /// <summary>
+    /// Exchanges an authorization code for access token using configured options, honoring cancellation
+    /// </summary>
+    public async Task<Token> ExchangeAuthorizationCodeAsync(string code, AnafOAuthOptions options, CancellationToken cancellationToken)
     {
+        if (string.IsNullOrWhiteSpace(code))
+        {
+            throw new ArgumentNullException(nameof(code), "Authorization code cannot be null or empty");
+        }
+
         if (options == null || !options.IsValid())
         {
             throw new ArgumentException("Invalid OAuth options provided");
         }
-        
-        Token token = await ExchangeAuthorizationCodeAsync(code, options.ClientId, options.ClientSecret, options.RedirectUri);
+
+        var form = new List<KeyValuePair<string, string>>
+        {
+            new("grant_type", "authorization_code"),
+            new("code", code),
+            new("client_id", options.ClientId),
+            new("client_secret", options.ClientSecret),
+            new("redirect_uri", options.RedirectUri),
+        };
+
+        if (options.IncludeTokenContentType)
+        {
+            form.Add(new("token_content_type", "jwt"));
+        }
+
+        return await RequestTokenAsync(
+            "exchange", options.TokenUrl, options.ClientId, options.ClientSecret, form, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Exchanges a refresh token for a new access token (and, per ANAF policy, a new refresh token) using configured options
+    /// </summary>
+    public async Task<Token> RefreshAccessTokenAsync(string refreshToken, AnafOAuthOptions options, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(refreshToken);
+
+        if (options == null || !options.IsValid())
+        {
+            throw new ArgumentException("Invalid OAuth options provided");
+        }
+
+        var form = new List<KeyValuePair<string, string>>
+        {
+            new("grant_type", "refresh_token"),
+            new("refresh_token", refreshToken),
+        };
+
+        if (options.IncludeTokenContentType)
+        {
+            form.Add(new("token_content_type", "jwt"));
+        }
+
+        Token token = await RequestTokenAsync(
+            "refresh", options.TokenUrl, options.ClientId, options.ClientSecret, form, cancellationToken).ConfigureAwait(false);
+
+        if (string.IsNullOrEmpty(token.RefreshToken))
+        {
+            _logger.LogWarning("ANAF OAuth {Operation} response did not include a new refresh token", "refresh");
+        }
 
         return token;
     }
-    
+
     /// <summary>
     /// Validates that a certificate is suitable for client authentication with ANAF
     /// </summary>
@@ -500,17 +554,19 @@ internal class AnafOAuthClient : IAnafOAuthClient
     private static async Task<Token> GetJwtTokenAsync(string clientId, string clientSecret, string callbackUrl,
         HttpClient client)
     {
-        string url =
-            $"https://logincert.anaf.ro/anaf-oauth2/v1/authorize?" +
-            $"client_id={clientId}&" +
-            $"redirect_uri={Uri.EscapeDataString(callbackUrl)}&" +
-            $"response_type=code&" +
-            $"token_content_type=jwt";
+        string url = BuildAuthorizationUrl(
+            authorizeUrl: AnafOAuthOptions.DefaultAuthorizeUrl,
+            clientId,
+            callbackUrl,
+            state: null,
+            includeTokenContentType: true,
+            prompt: null,
+            nonce: null);
 
         HttpResponseMessage response = await client.GetAsync(url);
 
-        if (response.RequestMessage?.RequestUri?.Query == null ||
-            !response.RequestMessage.RequestUri.Query.Contains("code="))
+        string? code = ExtractAuthorizationCode(response.RequestMessage?.RequestUri);
+        if (string.IsNullOrEmpty(code))
         {
             string actualUri = response.RequestMessage?.RequestUri?.ToString() ?? "Unknown";
             HttpStatusCode statusCode = response.StatusCode;
@@ -519,17 +575,17 @@ internal class AnafOAuthClient : IAnafOAuthClient
                 $"HTTP Status: {statusCode}. This may indicate certificate authentication failure or invalid OAuth parameters.");
         }
 
-        string code = response.RequestMessage.RequestUri.Query.Replace("?code=", "");
-        string postData =
-            $"grant_type=authorization_code&" +
-            $"code={code}&" +
-            $"client_id={clientId}&" +
-            $"client_secret={clientSecret}&" +
-            $"redirect_uri={Uri.EscapeDataString(callbackUrl)}&" +
-            $"token_content_type=jwt";
+        var form = new List<KeyValuePair<string, string>>
+        {
+            new("grant_type", "authorization_code"),
+            new("code", code),
+            new("client_id", clientId),
+            new("client_secret", clientSecret),
+            new("redirect_uri", callbackUrl),
+            new("token_content_type", "jwt"),
+        };
 
-        response = await client.PostAsync("https://logincert.anaf.ro/anaf-oauth2/v1/token",
-            new StringContent(postData));
+        response = await client.PostAsync(AnafOAuthOptions.DefaultTokenUrl, new FormUrlEncodedContent(form));
         string resultContent = await response.Content.ReadAsStringAsync();
 
         if (!resultContent.Contains("access_token"))
@@ -537,11 +593,24 @@ internal class AnafOAuthClient : IAnafOAuthClient
             HttpStatusCode statusCode = response.StatusCode;
             throw new InvalidOperationException(
                 $"ANAF OAuth token exchange failed. HTTP Status: {statusCode}. " +
-                $"Response: {resultContent}. " +
                 $"This may indicate invalid client credentials, expired authorization code, or ANAF service issues.");
         }
 
-        return JsonSerializer.Deserialize<Token>(resultContent);
+        return ParseTokenResponse(resultContent);
+    }
+
+    /// <summary>
+    /// Extracts the <c>code</c> query-string value from an ANAF authorize-endpoint callback URI, or null when absent.
+    /// </summary>
+    internal static string? ExtractAuthorizationCode(Uri? uri)
+    {
+        if (uri == null)
+        {
+            return null;
+        }
+
+        NameValueCollection query = HttpUtility.ParseQueryString(uri.Query);
+        return query["code"];
     }
 
     /// <summary>
