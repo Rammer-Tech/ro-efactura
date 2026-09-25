@@ -3,6 +3,7 @@ using FluentValidation.Results;
 using RoEFactura.Tests.Helpers;
 using RoEFactura.Validation;
 using RoEFactura.Validation.Constants;
+using UblSharp.CommonAggregateComponents;
 using Xunit;
 
 namespace RoEFactura.Tests.Validation;
@@ -21,27 +22,36 @@ public class RoCiusUblValidatorTests
             $"Expected error code {errorCode} but got: {string.Join(", ", result.Errors.Select(e => e.ErrorCode))}");
     }
 
-    // ── BR-RO-CIUS ──────────────────────────────────────────────────────────
+    // ── BR-RO-001 ───────────────────────────────────────────────────────────
 
     [Fact]
-    public void BrRoCius_ValidCustomizationId_Passes()
+    public void BrRo001_CurrentCiusRoCustomizationId_Passes()
     {
         var invoice = InvoiceBuilder.Valid().Build();
-        Validate(invoice).Errors.Should().NotContain(e => e.ErrorCode == "BR-RO-CIUS");
+        Validate(invoice).Errors.Should().NotContain(e => e.ErrorCode == "BR-RO-001");
     }
 
     [Fact]
-    public void BrRoCius_WrongCustomizationId_Fails()
+    public void BrRo001_WrongCustomizationId_Fails()
     {
         var invoice = InvoiceBuilder.Valid().WithCustomizationId("urn:wrong").Build();
-        ShouldContainErrorCode(Validate(invoice), "BR-RO-CIUS");
+        ShouldContainErrorCode(Validate(invoice), "BR-RO-001");
     }
 
     [Fact]
-    public void BrRoCius_NullCustomizationId_Fails()
+    public void BrRo001_NullCustomizationId_Fails()
     {
         var invoice = InvoiceBuilder.Valid().WithoutCustomizationId().Build();
-        ShouldContainErrorCode(Validate(invoice), "BR-RO-CIUS");
+        ShouldContainErrorCode(Validate(invoice), "BR-RO-001");
+    }
+
+    [Fact]
+    public void BrRo001_LegacyRoCius2021CustomizationId_Fails()
+    {
+        // The legacy identifier is accepted by IsRomanianInvoice() for detection, but it is not the
+        // exact CIUS-RO 1.0.1 value BR-RO-001 requires.
+        var invoice = InvoiceBuilder.Valid().WithCustomizationId(RomanianConstants.LegacyCustomizationIds[0]).Build();
+        ShouldContainErrorCode(Validate(invoice), "BR-RO-001");
     }
 
     // ── BR-RO-010 ───────────────────────────────────────────────────────────
@@ -140,6 +150,74 @@ public class RoCiusUblValidatorTests
         ShouldContainErrorCode(Validate(invoice), "BR-RO-030");
     }
 
+    // ── BR-RO-040 ───────────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData("3")]
+    [InlineData("35")]
+    [InlineData("432")]
+    public void BrRo040_AllowedVatPointDateCode_Passes(string code)
+    {
+        var invoice = InvoiceBuilder.Valid().WithVatPointDateCode(code).Build();
+        Validate(invoice).Errors.Should().NotContain(e => e.ErrorCode == "BR-RO-040");
+    }
+
+    [Theory]
+    [InlineData("1")]
+    [InlineData("5")]
+    [InlineData("29")]
+    public void BrRo040_DisallowedVatPointDateCode_Fails(string code)
+    {
+        var invoice = InvoiceBuilder.Valid().WithVatPointDateCode(code).Build();
+        ShouldContainErrorCode(Validate(invoice), "BR-RO-040");
+    }
+
+    [Fact]
+    public void BrRo040_NoVatPointDateCode_RuleSkipped()
+    {
+        var invoice = InvoiceBuilder.Valid().Build();
+        Validate(invoice).Errors.Should().NotContain(e => e.ErrorCode == "BR-RO-040");
+    }
+
+    // ── BR-RO-100/101/110/111 wiring (Seller vs Buyer) ───────────────────────
+
+    [Fact]
+    public void SellerCountyWithoutRoPrefix_FailsBrRo110()
+    {
+        var invoice = InvoiceBuilder.Valid().WithSellerAddress("Cluj-Napoca", "CJ").Build();
+        ShouldContainErrorCode(Validate(invoice), "BR-RO-110");
+    }
+
+    [Fact]
+    public void BuyerCountyWithoutRoPrefix_FailsBrRo111()
+    {
+        var invoice = InvoiceBuilder.Valid().WithBuyerAddress("Iasi", "IS").Build();
+        ShouldContainErrorCode(Validate(invoice), "BR-RO-111");
+    }
+
+    [Fact]
+    public void SellerBucharestNonSectorCity_FailsBrRo100()
+    {
+        var invoice = InvoiceBuilder.Valid().WithSellerAddress("Bucuresti", "RO-B").Build();
+        ShouldContainErrorCode(Validate(invoice), "BR-RO-100");
+    }
+
+    [Fact]
+    public void BuyerBucharestNonSectorCity_FailsBrRo101()
+    {
+        var invoice = InvoiceBuilder.Valid().WithBuyerAddress("Bucuresti", "RO-B").Build();
+        ShouldContainErrorCode(Validate(invoice), "BR-RO-101");
+    }
+
+    [Fact]
+    public void ForeignBuyerWithoutCounty_PassesAddressRules()
+    {
+        var invoice = InvoiceBuilder.Valid().WithBuyerAddress("Berlin", null, "DE").Build();
+        string[] addressCodes = ["BR-RO-110", "BR-RO-111", "BR-RO-100", "BR-RO-101"];
+
+        Validate(invoice).Errors.Should().NotContain(e => addressCodes.Contains(e.ErrorCode));
+    }
+
     // ── BR-1 ────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -199,20 +277,52 @@ public class RoCiusUblValidatorTests
         Validate(invoice).Errors.Should().NotContain(e => e.ErrorCode == "BR-16");
     }
 
-    // ── BR-RO-A999 ──────────────────────────────────────────────────────────
+    // ── BR-RO-A999 removed (absent from RO16931-rules.sch 1.0.9 -- eliminated in 1.0.8) ─────
 
     [Fact]
-    public void BrRoA999_ExactlyNineNineNineLines_Passes()
+    public void LineCount_999Lines_DoesNotEmitRemovedBrRoA999()
     {
         var invoice = InvoiceBuilder.Valid().WithLineCount(999).Build();
         Validate(invoice).Errors.Should().NotContain(e => e.ErrorCode == "BR-RO-A999");
     }
 
     [Fact]
-    public void BrRoA999_OneThousandLines_Fails()
+    public void LineCount_1000Lines_DoesNotEmitRemovedBrRoA999()
     {
         var invoice = InvoiceBuilder.Valid().WithLineCount(1000).Build();
-        ShouldContainErrorCode(Validate(invoice), "BR-RO-A999");
+        Validate(invoice).Errors.Should().NotContain(e => e.ErrorCode == "BR-RO-A999");
+    }
+
+    // ── BR-RO-A020 / BR-RO-L200 / BR-RO-L300 (invoice number / note lengths) ─
+
+    [Fact]
+    public void InvoiceNumber_OverMaxLength_Fails()
+    {
+        var invoice = InvoiceBuilder.Valid().WithId("1" + new string('A', 200)).Build(); // 201 chars, has a digit
+        ShouldContainErrorCode(Validate(invoice), "BR-RO-L200");
+    }
+
+    [Fact]
+    public void InvoiceNotes_MoreThanMaxCount_Fails()
+    {
+        var invoice = InvoiceBuilder.Valid().WithNotes(21, 10).Build();
+        ShouldContainErrorCode(Validate(invoice), "BR-RO-A020");
+    }
+
+    [Fact]
+    public void InvoiceNote_OverMaxLength_Fails()
+    {
+        var invoice = InvoiceBuilder.Valid().WithNotes(1, 301).Build();
+        ShouldContainErrorCode(Validate(invoice), "BR-RO-L300");
+    }
+
+    // ── VAT exemption reason (BR-E-10 etc.), wired via VatBreakdownValidator ──
+
+    [Fact]
+    public void ExemptSubtotalWithoutReason_FailsViaFullValidator()
+    {
+        var invoice = InvoiceBuilder.Valid().WithSubtotalVat("E", 0m).Build();
+        ShouldContainErrorCode(Validate(invoice), "BR-E-10");
     }
 
     // ── BR-RO-Z2 ────────────────────────────────────────────────────────────
@@ -230,6 +340,26 @@ public class RoCiusUblValidatorTests
         // 100.001m has 3 decimal places
         var invoice = InvoiceBuilder.Valid().WithTotals(100.001m, 119.001m, 119.001m).Build();
         ShouldContainErrorCode(Validate(invoice), "BR-RO-Z2");
+    }
+
+    // ── Sparse / empty documents must never throw ────────────────────────────
+
+    [Fact]
+    public void Validate_EmptyOrSparseInvoice_DoesNotThrow()
+    {
+        Action act1 = () => _sut.Validate(new UblSharp.InvoiceType());
+        act1.Should().NotThrow();
+
+        var invoiceWithEmptyTaxTotal = InvoiceBuilder.Valid().Build();
+        invoiceWithEmptyTaxTotal.TaxTotal = new List<TaxTotalType>();
+        Action act2 = () => _sut.Validate(invoiceWithEmptyTaxTotal);
+        act2.Should().NotThrow();
+
+        var invoiceWithoutParties = InvoiceBuilder.Valid().Build();
+        invoiceWithoutParties.AccountingSupplierParty = null;
+        invoiceWithoutParties.AccountingCustomerParty = null;
+        Action act3 = () => _sut.Validate(invoiceWithoutParties);
+        act3.Should().NotThrow();
     }
 
     // ── Full valid invoice passes all rules ─────────────────────────────────

@@ -257,4 +257,52 @@ public class UblProcessingServiceTests
 
         mockValidator.Verify(v => v.ValidateAsync(It.IsAny<InvoiceType>(), It.IsAny<CancellationToken>()), Times.Never);
     }
+
+    // ── Instance-scoped statistics (no static state) ─────────────────────────
+
+    [Fact]
+    public async Task ProcessingStats_AreIsolatedPerServiceInstance()
+    {
+        var sut1 = CreateWithRealValidator();
+        var sut2 = CreateWithRealValidator();
+        string xml = LoadXml("Valid/valid-380-ron.xml");
+        byte[] bytes = System.Text.Encoding.UTF8.GetBytes(xml);
+
+        await sut1.ProcessInvoiceXmlAsync(bytes, "test.xml");
+
+        sut1.GetProcessingStats().TotalProcessed.Should().Be(1);
+        sut2.GetProcessingStats().TotalProcessed.Should().Be(0);
+    }
+
+    // ── BOM-safe decoding ──────────────────────────────────────────────────
+
+    [Fact]
+    public async Task ProcessInvoiceXmlAsync_Utf8BomBytes_ReturnsSuccess()
+    {
+        var sut = CreateWithRealValidator();
+        string xml = LoadXml("Valid/valid-380-ron.xml");
+        byte[] utf8Bom = [0xEF, 0xBB, 0xBF];
+        byte[] bytes = [.. utf8Bom, .. System.Text.Encoding.UTF8.GetBytes(xml)];
+
+        var result = await sut.ProcessInvoiceXmlAsync(bytes, "test.xml");
+
+        result.IsSuccess.Should().BeTrue();
+    }
+
+    // ── Logging hygiene: never log XML content ────────────────────────────
+
+    [Fact]
+    public async Task ProcessInvoiceAsync_MalformedXml_DoesNotLogXmlContent()
+    {
+        var logger = new CapturingLogger<UblProcessingService>();
+        var sut = new UblProcessingService(new RoCiusUblValidator(), logger);
+        const string secretMarker = "SECRET-MARKER-DO-NOT-LOG-9f3a";
+        // Malformed (unclosed tag): the parser fails with a structural error that must not echo this
+        // text-content marker back into any log entry or exception message.
+        string malformedXml = $"<Invoice><cbc:Note>{secretMarker}</cbc:Note>";
+
+        await sut.ProcessInvoiceAsync(malformedXml);
+
+        logger.Entries.Should().NotContain(entry => entry.Contains(secretMarker));
+    }
 }

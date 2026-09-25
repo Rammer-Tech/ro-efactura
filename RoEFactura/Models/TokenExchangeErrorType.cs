@@ -10,5 +10,10 @@ public enum TokenExchangeErrorType
     RateLimited,
     ServiceUnavailable,
     ServerError,
-    UnknownError
+    UnknownError,
+
+    /// <summary>
+    /// The authorization code or refresh token is invalid, expired or revoked; re-authorization is required.
+    /// </summary>
+    InvalidGrant
 }

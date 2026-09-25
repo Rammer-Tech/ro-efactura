@@ -82,4 +82,27 @@ public interface IAnafOAuthClient
     /// </code>
     /// </example>
     public Task<Token> ExchangeAuthorizationCodeAsync(string code, AnafOAuthOptions options);
+
+    /// <summary>
+    /// Exchanges an authorization code for an access token using configured options, honoring cancellation.
+    /// </summary>
+    /// <param name="code">Authorization code received from ANAF callback</param>
+    /// <param name="options">OAuth configuration options</param>
+    /// <param name="cancellationToken">Token to observe while awaiting the ANAF response</param>
+    /// <returns>Token response from ANAF</returns>
+    public Task<Token> ExchangeAuthorizationCodeAsync(string code, AnafOAuthOptions options, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Exchanges a refresh token for a new access token (and, per ANAF policy, a new refresh token).
+    /// </summary>
+    /// <param name="refreshToken">The refresh token previously issued by ANAF</param>
+    /// <param name="options">OAuth configuration options</param>
+    /// <param name="cancellationToken">Token to observe while awaiting the ANAF response</param>
+    /// <returns>Token response from ANAF, with a new access token and (usually) a new refresh token</returns>
+    /// <example>
+    /// <code>
+    /// var token = await client.RefreshAccessTokenAsync(refreshToken, options, cancellationToken);
+    /// </code>
+    /// </example>
+    public Task<Token> RefreshAccessTokenAsync(string refreshToken, AnafOAuthOptions options, CancellationToken cancellationToken = default);
 }

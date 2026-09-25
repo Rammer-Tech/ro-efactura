@@ -1,7 +1,9 @@
 using FluentAssertions;
 using RoEFactura.Extensions;
 using RoEFactura.Tests.Helpers;
+using RoEFactura.Validation.Constants;
 using UblSharp;
+using UblSharp.CommonAggregateComponents;
 using UblSharp.UnqualifiedDataTypes;
 using Xunit;
 
@@ -39,6 +41,37 @@ public class InvoiceTypeExtensionsTests
             CustomizationID = new IdentifierType { Value = "urn:cen.eu:en16931:2017" }
         };
         invoice.IsRomanianInvoice().Should().BeFalse();
+    }
+
+    [Fact]
+    public void IsRomanianInvoice_LegacyCustomizationIdWithForeignParties_ReturnsTrue()
+    {
+        var invoice = new InvoiceType
+        {
+            CustomizationID = new IdentifierType { Value = RomanianConstants.LegacyCustomizationIds[0] },
+            AccountingSupplierParty = new SupplierPartyType
+            {
+                Party = new PartyType
+                {
+                    PostalAddress = new AddressType
+                    {
+                        Country = new CountryType { IdentificationCode = new CodeType { Value = "DE" } }
+                    }
+                }
+            },
+            AccountingCustomerParty = new CustomerPartyType
+            {
+                Party = new PartyType
+                {
+                    PostalAddress = new AddressType
+                    {
+                        Country = new CountryType { IdentificationCode = new CodeType { Value = "FR" } }
+                    }
+                }
+            }
+        };
+
+        invoice.IsRomanianInvoice().Should().BeTrue();
     }
 
     // ── GetCurrencyCode ──────────────────────────────────────────────────────

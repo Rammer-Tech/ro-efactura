@@ -8,7 +8,9 @@ namespace RoEFactura.Services.Api;
 /// Interface for ANAF e-invoice API client
 /// </summary>
 /// <remarks>
-/// All methods require a valid ANAF access token (Bearer JWT).
+/// The list, upload, status and download members require a valid ANAF access token (Bearer JWT).
+/// <see cref="ValidateWithAnafAsync"/> and <see cref="ConvertToPdfAsync"/> call ANAF's public, stateless
+/// services and never send an Authorization header.
 /// </remarks>
 public interface IAnafEInvoiceClient
 {
@@ -24,13 +26,26 @@ public interface IAnafEInvoiceClient
     /// </code>
     /// </example>
     /// <param name="token">Bearer token for ANAF API authentication</param>
-    /// <param name="days">Number of days to look back for invoices (must be positive)</param>
+    /// <param name="days">Number of days to look back for invoices (must be between 1 and 60)</param>
     /// <param name="cui">Romanian fiscal identification code (CUI/CIF) to filter invoices</param>
     /// <param name="filter">Optional filter parameter for additional invoice filtering</param>
     /// <returns>List of e-invoice responses from ANAF</returns>
     /// <exception cref="ArgumentException">Thrown when token, cui are null/empty or days is zero/negative</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when days is greater than 60</exception>
     /// <exception cref="HttpRequestException">Thrown when the ANAF API request fails</exception>
     Task<List<EInvoiceAnafResponse>> ListEInvoicesAsync(string token, int days, string cui, string filter = null);
+
+    /// <summary>
+    /// Lists e-invoices from ANAF using the non-paged endpoint, with a required <see cref="CancellationToken"/>.
+    /// </summary>
+    /// <inheritdoc cref="ListEInvoicesAsync(string, int, string, string)"/>
+    /// <param name="token">Bearer token for ANAF API authentication</param>
+    /// <param name="days">Number of days to look back for invoices (must be between 1 and 60)</param>
+    /// <param name="cui">Romanian fiscal identification code (CUI/CIF) to filter invoices</param>
+    /// <param name="filter">Optional filter parameter for additional invoice filtering</param>
+    /// <param name="cancellationToken">Token used to cancel the request</param>
+    Task<List<EInvoiceAnafResponse>> ListEInvoicesAsync(
+        string token, int days, string cui, string? filter, CancellationToken cancellationToken);
 
     /// <summary>
     /// Lists e-invoices from ANAF using the paginated endpoint for efficient retrieval of large datasets
@@ -57,6 +72,21 @@ public interface IAnafEInvoiceClient
     Task<EInvoiceAnafPagedListResponse> ListPagedEInvoicesAsync(string token, long startMilliseconds, long endMilliseconds, string cui, string filter = null, int page = 1);
 
     /// <summary>
+    /// Lists e-invoices from ANAF using the paginated endpoint, with a required <see cref="CancellationToken"/>.
+    /// </summary>
+    /// <inheritdoc cref="ListPagedEInvoicesAsync(string, long, long, string, string, int)"/>
+    /// <param name="token">Bearer token for ANAF API authentication</param>
+    /// <param name="startMilliseconds">Start time as Unix timestamp in milliseconds (must be positive)</param>
+    /// <param name="endMilliseconds">End time as Unix timestamp in milliseconds (must be positive)</param>
+    /// <param name="cui">Romanian fiscal identification code (CUI/CIF) to filter invoices</param>
+    /// <param name="filter">Optional filter parameter for additional invoice filtering</param>
+    /// <param name="page">Page number for pagination (must be positive)</param>
+    /// <param name="cancellationToken">Token used to cancel the request</param>
+    Task<EInvoiceAnafPagedListResponse> ListPagedEInvoicesAsync(
+        string token, long startMilliseconds, long endMilliseconds, string cui, string? filter, int page,
+        CancellationToken cancellationToken);
+
+    /// <summary>
     /// Downloads an e-invoice as a ZIP file from ANAF and extracts it to the specified paths
     /// </summary>
     /// <param name="token">Bearer token for ANAF API authentication</param>
@@ -66,65 +96,8 @@ public interface IAnafEInvoiceClient
     /// <exception cref="ArgumentException">Thrown when any parameter is null or empty</exception>
     /// <exception cref="HttpRequestException">Thrown when the ANAF API request fails</exception>
     /// <exception cref="IOException">Thrown when file operations fail</exception>
+    [Obsolete("Use DownloadMessageAsync; this member writes to disk.")]
     Task DownloadEInvoiceAsync(string token, string zipDestinationPath, string unzipDestinationPath, string eInvoiceDownloadId);
-
-    /// <summary>
-    /// Validates an XML invoice file against ANAF validation rules
-    /// </summary>
-    /// <remarks>
-    /// Use this overload when you already have the XML on disk.
-    /// For in-memory content, use <see cref="ValidateXmlContentAsync"/>.
-    /// </remarks>
-    /// <param name="token">Bearer token for ANAF API authentication</param>
-    /// <param name="xmlFilePath">Absolute path to the XML file to validate</param>
-    /// <returns>Validation response from ANAF API indicating success or validation errors</returns>
-    /// <exception cref="ArgumentException">Thrown when token or xmlFilePath are null or empty</exception>
-    /// <exception cref="FileNotFoundException">Thrown when the specified XML file does not exist</exception>
-    /// <exception cref="HttpRequestException">Thrown when the ANAF API request fails</exception>
-    Task<string> ValidateXmlAsync(string token, string xmlFilePath);
-
-    /// <summary>
-    /// Validates XML invoice content against ANAF validation rules without requiring a physical file
-    /// </summary>
-    /// <remarks>
-    /// Use this overload when you already have the XML in memory.
-    /// </remarks>
-    /// <param name="token">Bearer token for ANAF API authentication</param>
-    /// <param name="xmlContent">XML content as string to validate</param>
-    /// <param name="fileName">Optional filename to use in the multipart form (defaults to "invoice.xml")</param>
-    /// <returns>Validation response from ANAF API indicating success or validation errors</returns>
-    /// <exception cref="ArgumentException">Thrown when token, xmlContent, or fileName are null or empty</exception>
-    /// <exception cref="HttpRequestException">Thrown when the ANAF API request fails</exception>
-    Task<string> ValidateXmlContentAsync(string token, string xmlContent, string fileName = "invoice.xml");
-
-    /// <summary>
-    /// Uploads an XML invoice file to the ANAF e-invoice system
-    /// </summary>
-    /// <remarks>
-    /// Use this overload when you already have the XML on disk.
-    /// For in-memory content, use <see cref="UploadXmlContentAsync"/>.
-    /// </remarks>
-    /// <param name="token">Bearer token for ANAF API authentication</param>
-    /// <param name="xmlFilePath">Absolute path to the XML file to upload</param>
-    /// <returns>Upload response from ANAF API with status and processing information</returns>
-    /// <exception cref="ArgumentException">Thrown when token or xmlFilePath are null or empty</exception>
-    /// <exception cref="FileNotFoundException">Thrown when the specified XML file does not exist</exception>
-    /// <exception cref="HttpRequestException">Thrown when the ANAF API request fails</exception>
-    Task<string> UploadXmlAsync(string token, string xmlFilePath);
-
-    /// <summary>
-    /// Uploads XML invoice content to the ANAF e-invoice system without requiring a physical file
-    /// </summary>
-    /// <remarks>
-    /// Use this overload when you already have the XML in memory.
-    /// </remarks>
-    /// <param name="token">Bearer token for ANAF API authentication</param>
-    /// <param name="xmlContent">XML content as string to upload</param>
-    /// <param name="fileName">Optional filename to use in the multipart form (defaults to "invoice.xml")</param>
-    /// <returns>Upload response from ANAF API with status and processing information</returns>
-    /// <exception cref="ArgumentException">Thrown when token, xmlContent, or fileName are null or empty</exception>
-    /// <exception cref="HttpRequestException">Thrown when the ANAF API request fails</exception>
-    Task<string> UploadXmlContentAsync(string token, string xmlContent, string fileName = "invoice.xml");
 
     /// <summary>
     /// Downloads an e-invoice from ANAF, extracts it, and parses it into a UBL InvoiceType object.
@@ -136,6 +109,16 @@ public interface IAnafEInvoiceClient
     /// <exception cref="ArgumentException">Thrown when token or eInvoiceDownloadId are null or empty</exception>
     /// <exception cref="HttpRequestException">Thrown when the ANAF API request fails</exception>
     Task<ProcessingResult<InvoiceType>> ProcessDownloadedInvoiceAsync(string token, string eInvoiceDownloadId);
+
+    /// <summary>
+    /// Downloads an e-invoice from ANAF and parses it, with a required <see cref="CancellationToken"/>.
+    /// </summary>
+    /// <inheritdoc cref="ProcessDownloadedInvoiceAsync(string, string)"/>
+    /// <param name="token">Bearer token for ANAF API authentication</param>
+    /// <param name="eInvoiceDownloadId">Unique identifier for the invoice to download and process</param>
+    /// <param name="cancellationToken">Token used to cancel the request</param>
+    Task<ProcessingResult<InvoiceType>> ProcessDownloadedInvoiceAsync(
+        string token, string eInvoiceDownloadId, CancellationToken cancellationToken);
 
     /// <summary>
     /// Validates UBL XML invoice content against Romanian RO_CIUS validation rules locally (no ANAF API call)
@@ -154,4 +137,88 @@ public interface IAnafEInvoiceClient
     /// <exception cref="ArgumentException">Thrown when token is null/empty or eInvoiceDownloadIds is null</exception>
     /// <exception cref="HttpRequestException">Thrown when ANAF API requests fail</exception>
     Task<List<ProcessingResult<InvoiceType>>> ProcessMultipleInvoicesAsync(string token, IEnumerable<string> eInvoiceDownloadIds);
+
+    /// <summary>
+    /// Downloads and processes multiple e-invoices from ANAF in batch, with a required <see cref="CancellationToken"/>.
+    /// </summary>
+    /// <inheritdoc cref="ProcessMultipleInvoicesAsync(string, IEnumerable{string})"/>
+    /// <param name="token">Bearer token for ANAF API authentication</param>
+    /// <param name="eInvoiceDownloadIds">Collection of unique identifiers for invoices to download and process</param>
+    /// <param name="cancellationToken">Token used to cancel the request; also checked between items</param>
+    Task<List<ProcessingResult<InvoiceType>>> ProcessMultipleInvoicesAsync(
+        string token, IEnumerable<string> eInvoiceDownloadIds, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Uploads an XML invoice to ANAF (<c>upload</c> or, when <see cref="AnafUploadOptions.IsB2C"/> is set,
+    /// <c>uploadb2c</c>) and returns the parsed response.
+    /// </summary>
+    /// <param name="token">Bearer token for ANAF API authentication</param>
+    /// <param name="xml">Raw invoice XML bytes (max 10 MB)</param>
+    /// <param name="options">Upload parameters: standard, CIF and the extern/autofactura/executare flags</param>
+    /// <param name="cancellationToken">Token used to cancel the request</param>
+    /// <exception cref="ArgumentException">token or xml are null/empty, or xml exceeds the 10 MB limit</exception>
+    /// <exception cref="ArgumentNullException">options is null</exception>
+    /// <exception cref="AnafApiException">ANAF returned a non-2xx response</exception>
+    /// <exception cref="AnafRateLimitException">ANAF returned HTTP 429</exception>
+    Task<AnafUploadResult> UploadAsync(
+        string token, byte[] xml, AnafUploadOptions options, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Queries the processing status of a previously uploaded message (<c>stareMesaj</c>).
+    /// </summary>
+    /// <param name="token">Bearer token for ANAF API authentication</param>
+    /// <param name="uploadIndex">The upload index returned by <see cref="UploadAsync"/></param>
+    /// <param name="cancellationToken">Token used to cancel the request</param>
+    /// <exception cref="ArgumentException">token or uploadIndex are null/empty</exception>
+    /// <exception cref="AnafApiException">ANAF returned a non-2xx response</exception>
+    /// <exception cref="AnafRateLimitException">ANAF returned HTTP 429</exception>
+    Task<AnafMessageStatusResult> GetMessageStatusAsync(
+        string token, string uploadIndex, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Downloads a message (<c>descarcare</c>) entirely in memory and splits the invoice/error XML from
+    /// the Ministry of Finance signature XML.
+    /// </summary>
+    /// <param name="token">Bearer token for ANAF API authentication</param>
+    /// <param name="downloadId">The download id (from <c>listaMesajeFactura</c> or <c>stareMesaj</c>)</param>
+    /// <param name="cancellationToken">Token used to cancel the request</param>
+    /// <exception cref="ArgumentException">token or downloadId are null/empty</exception>
+    /// <exception cref="AnafDownloadWindowExpiredException">The 60-day download window has passed</exception>
+    /// <exception cref="AnafApiException">ANAF returned a non-2xx response, or a JSON error body</exception>
+    /// <exception cref="AnafRateLimitException">ANAF returned HTTP 429</exception>
+    Task<AnafDownloadResult> DownloadMessageAsync(
+        string token, string downloadId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Validates an XML document against ANAF's public, stateless <c>validare</c> service. Never sends
+    /// an Authorization header and always targets ANAF's public production services, regardless of the
+    /// configured environment.
+    /// </summary>
+    /// <param name="xml">Raw XML bytes to validate (max 5 MB)</param>
+    /// <param name="standard">Ubl → FACT1, CreditNote → FCN; no other value is accepted</param>
+    /// <param name="cancellationToken">Token used to cancel the request</param>
+    /// <exception cref="ArgumentException">xml is null/empty, or exceeds the 5 MB limit</exception>
+    /// <exception cref="ArgumentOutOfRangeException">standard is not Ubl or CreditNote</exception>
+    /// <exception cref="AnafApiException">ANAF returned a non-2xx or unparseable response</exception>
+    Task<AnafValidationResult> ValidateWithAnafAsync(
+        byte[] xml, AnafDocumentStandard standard, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Converts an XML document to PDF using ANAF's public, stateless <c>transformare</c> service. Never
+    /// sends an Authorization header and always targets ANAF's public production services, regardless of
+    /// the configured environment.
+    /// </summary>
+    /// <param name="xml">Raw XML bytes to convert (max 5 MB)</param>
+    /// <param name="standard">Ubl → FACT1, CreditNote → FCN; no other value is accepted</param>
+    /// <param name="validate">When false, appends the <c>/DA</c> segment and skips ANAF-side validation</param>
+    /// <param name="cancellationToken">Token used to cancel the request</param>
+    /// <returns>The PDF bytes</returns>
+    /// <exception cref="ArgumentException">xml is null/empty, or exceeds the 5 MB limit</exception>
+    /// <exception cref="ArgumentOutOfRangeException">standard is not Ubl or CreditNote</exception>
+    /// <exception cref="AnafApiException">
+    /// ANAF returned a non-2xx or unparseable response, or reported validation failures (see
+    /// <see cref="AnafApiException.Errors"/>)
+    /// </exception>
+    Task<byte[]> ConvertToPdfAsync(
+        byte[] xml, AnafDocumentStandard standard, bool validate = true, CancellationToken cancellationToken = default);
 }
