@@ -1,0 +1,55 @@
+name: Build and Test
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_VERSION: '10.0.x'
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_NOLOGO: true
+
+jobs:
+  build-and-test:
+    name: Build and Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+
+    - name: Restore
+      run: dotnet restore RoEFactura.sln
+
+    - name: Build
+      run: dotnet build RoEFactura.sln --configuration Release --no-restore
+
+    - name: Test
+      run: >
+        dotnet test RoEFactura.Tests/RoEFactura.Tests.csproj
+        --configuration Release
+        --no-build
+        --logger "console;verbosity=normal"
+        --logger "trx;LogFileName=test-results.trx"
+        --results-directory TestResults
+
+    - name: Upload test results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: test-results
+        path: TestResults/*.trx
