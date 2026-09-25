@@ -173,7 +173,7 @@ public class AnafEInvoiceClientTests
         var (client, _) = CreateClientWithHttp(
             new HttpResponseMessage(HttpStatusCode.Unauthorized));
 
-        await Assert.ThrowsAsync<Exception>(() =>
+        await Assert.ThrowsAsync<HttpRequestException>(() =>
             client.ListEInvoicesAsync(FakeToken, 7, FakeCui));
     }
 
