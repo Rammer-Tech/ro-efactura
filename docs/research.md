@@ -1,3 +1,10 @@
+> **Historical document.** This research reflects the 2021 RO_CIUS spec (`RO_CIUS:1.0.0.2021`), which
+> this library's local validator no longer targets. It is superseded by
+> [`VALIDATION_RULES.md`](VALIDATION_RULES.md), which documents the current CIUS-RO 1.0.1 rules as
+> validated against the official CIUS-RO 1.0.9 schematron artefact. Some values below (for example the
+> BT-1 invoice-number length limit of 30) are known to be outdated — see `VALIDATION_RULES.md`
+> "Sources" for the corrected values. Kept for background/context only.
+
 Ok, fac extragerea strict “tech”, astfel încât să-ți poți modela domain-urile C# (EF Core) și să implementezi un converter din UBL 2.1 (cu RO\_CIUS). Țin formatul pe: entități (BG-*), câmpuri (BT-*), obligatoriu/opțional (cardinalitate), tip sugerat C#, constrângeri (inclusiv RO\_CIUS), plus “cheat-sheet” de mapare UBL 2.1 și note EF Core. Voi marca sursele direct în text, cu BT/BG/BR și citare.
 
 ---
