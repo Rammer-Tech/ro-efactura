@@ -26,8 +26,10 @@ public static partial class InvoiceTypeExtensions
     {
         if (invoice == null) return false;
 
-        // Check customization ID for RO_CIUS
-        if (invoice.CustomizationID?.Value == RomanianConstants.RoCiusCustomizationId)
+        // Check customization ID for the current CIUS-RO 1.0.1 identifier or a known legacy identifier.
+        string? customizationId = invoice.CustomizationID?.Value;
+        if (!string.IsNullOrEmpty(customizationId)
+            && (customizationId == RomanianConstants.CustomizationId || RomanianConstants.LegacyCustomizationIds.Contains(customizationId)))
             return true;
 
         // Check seller country
@@ -118,7 +120,7 @@ public static partial class InvoiceTypeExtensions
         // Romanian specific validation
         if (invoice.IsRomanianInvoice())
         {
-            if (invoice.CustomizationID?.Value != RomanianConstants.RoCiusCustomizationId)
+            if (invoice.CustomizationID?.Value != RomanianConstants.CustomizationId)
                 summary.Add("Missing RO_CIUS customization ID");
 
             string invoiceNumber = invoice.ID?.Value ?? "";

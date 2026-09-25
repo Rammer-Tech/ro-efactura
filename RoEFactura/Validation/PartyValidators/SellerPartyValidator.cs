@@ -1,4 +1,5 @@
 using FluentValidation;
+using RoEFactura.Validation;
 using UblSharp.CommonAggregateComponents;
 
 
@@ -20,6 +21,11 @@ public class SellerPartyValidator : AbstractValidator<SupplierPartyType>
             .When(x => IsRomanianParty(x))
             .WithErrorCode("BR-8-ADDRESS")
             .WithMessage("Romanian seller must have a postal address.");
+
+        // BR-RO-100/110: Romanian seller postal address must satisfy the county/Bucharest-sector rules.
+        RuleFor(x => x.Party!.PostalAddress!)
+            .SetValidator(new RomanianAddressValidator(RomanianAddressRole.Seller))
+            .When(x => x.Party?.PostalAddress != null && IsRomanianParty(x));
 
         // Ensure postal address exists (EN 16931 requirement)
         RuleFor(x => x)

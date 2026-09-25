@@ -114,10 +114,61 @@ public class InvoiceBuilder
         return this;
     }
 
+    public InvoiceBuilder WithoutLineExtensionAmount()
+    {
+        // UblSharp AmountType getters never return null; missing monetary amounts use no currencyID.
+        _invoice.LegalMonetaryTotal!.LineExtensionAmount = new AmountType { Value = 0m, currencyID = null };
+        return this;
+    }
+
     public InvoiceBuilder WithoutTaxExclusiveAmount()
     {
         // UblSharp AmountType getters never return null; missing monetary amounts use no currencyID.
         _invoice.LegalMonetaryTotal!.TaxExclusiveAmount = new AmountType { Value = 0m, currencyID = null };
+        return this;
+    }
+
+    /// <summary>
+    /// Adds a single document-level allowance (S/19%) and recomputes BT-107/BT-109/BT-110/BT-112/BT-115
+    /// (BT-106 is left untouched, still equal to the line sum) so the whole invoice stays internally consistent.
+    /// </summary>
+    public InvoiceBuilder WithDocumentAllowance(decimal amount)
+    {
+        const decimal vatRate = 19m;
+        decimal lineExtension = _invoice.LegalMonetaryTotal?.LineExtensionAmount?.Value ?? 0m;
+        decimal taxExclusive = lineExtension - amount;
+        decimal vatAmount = Math.Round(taxExclusive * vatRate / 100m, 2, MidpointRounding.AwayFromZero);
+        decimal taxInclusive = taxExclusive + vatAmount;
+
+        _invoice.AllowanceCharge = new List<AllowanceChargeType>
+        {
+            new AllowanceChargeType
+            {
+                ChargeIndicator = new IndicatorType { Value = false },
+                Amount = new AmountType { Value = amount, currencyID = "RON" },
+                TaxCategory = new List<TaxCategoryType>
+                {
+                    new TaxCategoryType
+                    {
+                        ID = new IdentifierType { Value = "S" },
+                        Percent = new PercentType { Value = vatRate },
+                        TaxScheme = new TaxSchemeType { ID = new IdentifierType { Value = "VAT" } }
+                    }
+                }
+            }
+        };
+
+        _invoice.LegalMonetaryTotal = new MonetaryTotalType
+        {
+            LineExtensionAmount = new AmountType { Value = lineExtension, currencyID = "RON" },
+            TaxExclusiveAmount = new AmountType { Value = taxExclusive, currencyID = "RON" },
+            AllowanceTotalAmount = new AmountType { Value = amount, currencyID = "RON" },
+            TaxInclusiveAmount = new AmountType { Value = taxInclusive, currencyID = "RON" },
+            PayableAmount = new AmountType { Value = taxInclusive, currencyID = "RON" }
+        };
+
+        _invoice.TaxTotal = new List<TaxTotalType> { BuildTaxTotal(taxExclusive, vatAmount, vatRate) };
+
         return this;
     }
 
@@ -225,18 +276,138 @@ public class InvoiceBuilder
         return this;
     }
 
+    public InvoiceBuilder WithSellerAddress(string city, string county)
+    {
+        if (_invoice.AccountingSupplierParty?.Party != null)
+            _invoice.AccountingSupplierParty.Party.PostalAddress = BuildRomanianAddress(city, county);
+        return this;
+    }
+
+    public InvoiceBuilder WithBuyerAddress(string city, string? county, string country = "RO")
+    {
+        if (_invoice.AccountingCustomerParty?.Party != null)
+        {
+            _invoice.AccountingCustomerParty.Party.PostalAddress = new AddressType
+            {
+                CityName = string.IsNullOrEmpty(city) ? null : new NameType { Value = city },
+                CountrySubentity = string.IsNullOrEmpty(county) ? null : new TextType { Value = county },
+                Country = new CountryType { IdentificationCode = new CodeType { Value = country } }
+            };
+        }
+        return this;
+    }
+
+    public InvoiceBuilder WithNotes(int count, int length)
+    {
+        _invoice.Note = Enumerable.Range(1, count)
+            .Select(_ => new TextType { Value = new string('A', length) })
+            .ToList();
+        return this;
+    }
+
+    public InvoiceBuilder WithVatPointDateCode(string code)
+    {
+        _invoice.InvoicePeriod = new List<PeriodType>
+        {
+            new PeriodType
+            {
+                DescriptionCode = new List<CodeType> { new CodeType { Value = code } }
+            }
+        };
+        return this;
+    }
+
+    /// <summary>Overrides the (single) invoice line's VAT category/rate. <paramref name="percent"/> null omits BT-152.</summary>
+    public InvoiceBuilder WithLineVat(string category, decimal? percent)
+    {
+        var line = _invoice.InvoiceLine?.FirstOrDefault();
+        if (line?.Item != null)
+        {
+            line.Item.ClassifiedTaxCategory = new List<TaxCategoryType>
+            {
+                new TaxCategoryType
+                {
+                    ID = new IdentifierType { Value = category },
+                    Percent = percent.HasValue ? new PercentType { Value = percent.Value } : null,
+                    TaxScheme = new TaxSchemeType { ID = new IdentifierType { Value = "VAT" } }
+                }
+            };
+        }
+        return this;
+    }
+
+    /// <summary>Overrides the (single) TaxTotal's first subtotal category/rate/exemption reason.</summary>
+    public InvoiceBuilder WithSubtotalVat(string category, decimal? percent, string? reasonText = null, string? reasonCode = null)
+    {
+        var subtotal = _invoice.TaxTotal?.FirstOrDefault()?.TaxSubtotal?.FirstOrDefault();
+        if (subtotal != null)
+        {
+            subtotal.TaxCategory = new TaxCategoryType
+            {
+                ID = new IdentifierType { Value = category },
+                Percent = percent.HasValue ? new PercentType { Value = percent.Value } : null,
+                TaxScheme = new TaxSchemeType { ID = new IdentifierType { Value = "VAT" } },
+                TaxExemptionReasonCode = reasonCode == null ? null : new CodeType { Value = reasonCode },
+                TaxExemptionReason = reasonText == null
+                    ? null
+                    : new List<TextType> { new TextType { Value = reasonText } }
+            };
+        }
+        return this;
+    }
+
+    /// <summary>
+    /// Replaces TaxTotal with a document-currency entry (<paramref name="docCurrency"/>, <paramref name="docVat"/>,
+    /// single S-rate subtotal) plus a second accounting-currency (RON) entry carrying only a TaxAmount, exercising
+    /// <see cref="RoEFactura.Validation.TotalsValidator.GetDocumentCurrencyTaxTotal"/>'s currency-based selection.
+    /// </summary>
+    public InvoiceBuilder WithDocumentCurrencyTaxTotals(string docCurrency, decimal docVat, decimal accountingVatRon)
+    {
+        var existingSubtotal = _invoice.TaxTotal?.FirstOrDefault()?.TaxSubtotal?.FirstOrDefault();
+        decimal taxableAmount = existingSubtotal?.TaxableAmount?.Value ?? 100m;
+        decimal percent = existingSubtotal?.TaxCategory?.Percent?.Value ?? 19m;
+
+        _invoice.TaxTotal = new List<TaxTotalType>
+        {
+            new TaxTotalType
+            {
+                TaxAmount = new AmountType { Value = docVat, currencyID = docCurrency },
+                TaxSubtotal = new List<TaxSubtotalType>
+                {
+                    new TaxSubtotalType
+                    {
+                        TaxableAmount = new AmountType { Value = taxableAmount, currencyID = docCurrency },
+                        TaxAmount = new AmountType { Value = docVat, currencyID = docCurrency },
+                        TaxCategory = new TaxCategoryType
+                        {
+                            ID = new IdentifierType { Value = "S" },
+                            Percent = new PercentType { Value = percent },
+                            TaxScheme = new TaxSchemeType { ID = new IdentifierType { Value = "VAT" } }
+                        }
+                    }
+                }
+            },
+            new TaxTotalType
+            {
+                TaxAmount = new AmountType { Value = accountingVatRon, currencyID = "RON" }
+            }
+        };
+
+        return this;
+    }
+
     private static InvoiceType BuildBase()
     {
         var line = BuildValidLine("1");
         return new InvoiceType
         {
-            CustomizationID = new IdentifierType { Value = RomanianConstants.RoCiusCustomizationId },
+            CustomizationID = new IdentifierType { Value = RomanianConstants.CustomizationId },
             ID = new IdentifierType { Value = "INV-2024-001" },
             IssueDate = new DateType { Value = DateTime.Today },
             InvoiceTypeCode = new CodeType { Value = "380" },
             DocumentCurrencyCode = new CodeType { Value = "RON" },
-            AccountingSupplierParty = BuildRomanianSeller("SC Vanzator SRL", "J12/100/2020", "RO12345678", "CJ", "Cluj-Napoca"),
-            AccountingCustomerParty = BuildRomanianBuyer("SC Cumparator SRL", "J40/200/2019", "RO87654321", "IS", "Iasi"),
+            AccountingSupplierParty = BuildRomanianSeller("SC Vanzator SRL", "J12/100/2020", "RO12345678", "RO-CJ", "Cluj-Napoca"),
+            AccountingCustomerParty = BuildRomanianBuyer("SC Cumparator SRL", "J40/200/2019", "RO87654321", "RO-IS", "Iasi"),
             TaxTotal = new List<TaxTotalType> { BuildTaxTotal(100m, 19m, 19m) },
             LegalMonetaryTotal = BuildMonetaryTotal(100m, 119m, 119m),
             InvoiceLine = new List<InvoiceLineType> { line }

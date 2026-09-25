@@ -177,46 +177,89 @@ public class InvoiceLineValidatorTests
     // ── Romanian length limits ────────────────────────────────────────────────
 
     [Fact]
-    public void RoLineNoteLength_ExactlyThreeHundredChars_Passes()
+    public void LineNote_ExactlyMaxLength_Passes()
     {
         var line = ValidLine();
         line.Note = new List<TextType> { new TextType { Value = new string('A', 300) } };
-        Validate(line).Errors.Should().NotContain(e => e.ErrorCode == "RO-LINE-NOTE-LENGTH");
+        Validate(line).Errors.Should().NotContain(e => e.ErrorCode == "BR-RO-L300");
     }
 
     [Fact]
-    public void RoLineNoteLength_ThreeHundredOneChars_Fails()
+    public void LineNote_OverMaxLength_Fails()
     {
         var line = ValidLine();
         line.Note = new List<TextType> { new TextType { Value = new string('A', 301) } };
-        Validate(line).Errors.Should().Contain(e => e.ErrorCode == "RO-LINE-NOTE-LENGTH");
+        Validate(line).Errors.Should().Contain(e => e.ErrorCode == "BR-RO-L300");
     }
 
     [Fact]
-    public void RoItemNameLength_ExactlyTwoHundredChars_Passes()
+    public void ItemName_ExactlyMaxLength_Passes()
     {
         var line = ValidLine();
-        line.Item!.Name = new NameType { Value = new string('A', 200) };
-        Validate(line).Errors.Should().NotContain(e => e.ErrorCode == "RO-ITEM-NAME-LENGTH");
+        line.Item!.Name = new NameType { Value = new string('A', 100) };
+        Validate(line).Errors.Should().NotContain(e => e.ErrorCode == "BR-RO-L100");
     }
 
     [Fact]
-    public void RoItemNameLength_TwoHundredOneChars_Fails()
+    public void ItemName_OverMaxLength_Fails()
     {
         var line = ValidLine();
-        line.Item!.Name = new NameType { Value = new string('A', 201) };
-        Validate(line).Errors.Should().Contain(e => e.ErrorCode == "RO-ITEM-NAME-LENGTH");
+        line.Item!.Name = new NameType { Value = new string('A', 101) };
+        Validate(line).Errors.Should().Contain(e => e.ErrorCode == "BR-RO-L100");
     }
 
     [Fact]
-    public void RoItemDescLength_TwoHundredOneChars_Fails()
+    public void ItemDescription_OverMaxLength_Fails()
     {
         var line = ValidLine();
         line.Item!.Description = new List<TextType>
         {
             new TextType { Value = new string('A', 201) }
         };
-        Validate(line).Errors.Should().Contain(e => e.ErrorCode == "RO-ITEM-DESC-LENGTH");
+        Validate(line).Errors.Should().Contain(e => e.ErrorCode == "BR-RO-L200");
+    }
+
+    // ── VAT category rate rules (BR-S-05/BR-Z-05/BR-E-05/BR-AE-05/BR-IC-05/BR-G-05/BR-O-05) ───
+
+    [Theory]
+    [InlineData("S", "21", null)]
+    [InlineData("S", "0", "BR-S-05")]
+    [InlineData("Z", "0", null)]
+    [InlineData("Z", "5", "BR-Z-05")]
+    [InlineData("E", "0", null)]
+    [InlineData("E", "21", "BR-E-05")]
+    [InlineData("AE", "0", null)]
+    [InlineData("AE", "21", "BR-AE-05")]
+    [InlineData("K", "0", null)]
+    [InlineData("K", "21", "BR-IC-05")]
+    [InlineData("G", "0", null)]
+    [InlineData("G", "21", "BR-G-05")]
+    [InlineData("O", null, null)]
+    [InlineData("O", "21", "BR-O-05")]
+    public void LineVatCategory_RateRules(string category, string? percent, string? expectedErrorCode)
+    {
+        var line = ValidLine();
+        line.Item!.ClassifiedTaxCategory = new List<TaxCategoryType>
+        {
+            new TaxCategoryType
+            {
+                ID = new IdentifierType { Value = category },
+                Percent = percent == null ? null : new PercentType { Value = decimal.Parse(percent) },
+                TaxScheme = new TaxSchemeType { ID = new IdentifierType { Value = "VAT" } }
+            }
+        };
+
+        var result = Validate(line);
+        string[] vatRateCodes = ["BR-S-05", "BR-Z-05", "BR-E-05", "BR-AE-05", "BR-IC-05", "BR-G-05", "BR-O-05"];
+
+        if (expectedErrorCode == null)
+        {
+            result.Errors.Should().NotContain(e => vatRateCodes.Contains(e.ErrorCode));
+        }
+        else
+        {
+            result.Errors.Should().Contain(e => e.ErrorCode == expectedErrorCode);
+        }
     }
 
     // ── Full valid line passes all rules ──────────────────────────────────────

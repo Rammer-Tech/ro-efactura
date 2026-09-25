@@ -6,21 +6,12 @@ namespace RoEFactura.Validation.PartyValidators;
 
 public class PayeePartyValidator : AbstractValidator<PartyType>
 {
+    // BR-RO-130 (forced execution Payee identity) is not implemented here: it depends on the
+    // `executare=DA` upload flag, which is not present in the XML being validated -- ANAF enforces
+    // it at upload time based on that flag, not from document content alone.
+
     public PayeePartyValidator()
     {
-        // BR-RO-130: In forced execution, Payee must have name and legal registration ID
-        RuleFor(x => x)
-            .Must(HasValidPayeeName)
-            .When(x => IsForcedExecution(x))
-            .WithErrorCode("BR-RO-130")
-            .WithMessage("In forced execution, Payee name is required and must be the execution authority name.");
-
-        RuleFor(x => x)
-            .Must(HasValidLegalRegistrationId)
-            .When(x => IsForcedExecution(x))
-            .WithErrorCode("BR-RO-130")
-            .WithMessage("In forced execution, Payee legal registration identifier is required.");
-
         // EN 16931: If payee exists and is different from seller, name is required
         RuleFor(x => x)
             .Must(HasValidPayeeName)
@@ -34,18 +25,5 @@ public class PayeePartyValidator : AbstractValidator<PartyType>
         var registrationName = party?.PartyLegalEntity?.FirstOrDefault()?.RegistrationName?.Value;
         var partyName = party?.PartyName?.FirstOrDefault()?.Name?.Value;
         return !string.IsNullOrEmpty(registrationName) || !string.IsNullOrEmpty(partyName);
-    }
-
-    private static bool HasValidLegalRegistrationId(PartyType party)
-    {
-        return !string.IsNullOrEmpty(party?.PartyLegalEntity?.FirstOrDefault()?.CompanyID?.Value);
-    }
-
-    private static bool IsForcedExecution(PartyType party)
-    {
-        // This would need to be determined by business logic - 
-        // perhaps by checking invoice type or other indicators
-        // For now, we'll assume it's not forced execution
-        return false;
     }
 }
