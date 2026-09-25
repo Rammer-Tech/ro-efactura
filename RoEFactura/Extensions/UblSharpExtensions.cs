@@ -1,3 +1,4 @@
+using System.Text;
 using System.Xml;
 using System.Xml.Serialization;
 using RoEFactura.Utilities;
@@ -39,7 +40,8 @@ public static partial class UblSharpExtensions
     }
 
     /// <summary>
-    /// Saves an InvoiceType to XML string
+    /// Saves an InvoiceType to XML string. The declaration reads <c>encoding="utf-8"</c> (via
+    /// <see cref="Utf8StringWriter"/>), even though the return value is an in-memory <see cref="string"/>.
     /// </summary>
     public static string SaveInvoiceToXml(this InvoiceType invoice)
     {
@@ -49,12 +51,12 @@ public static partial class UblSharpExtensions
         try
         {
             XmlSerializer serializer = new XmlSerializer(typeof(InvoiceType));
-            using StringWriter stringWriter = new StringWriter();
+            using Utf8StringWriter stringWriter = new Utf8StringWriter();
             using XmlWriter xmlWriter = XmlWriter.Create(stringWriter, new XmlWriterSettings
             {
                 Indent = true,
                 IndentChars = "  ",
-                Encoding = System.Text.Encoding.UTF8,
+                Encoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
                 OmitXmlDeclaration = false
             });
 
@@ -71,5 +73,48 @@ public static partial class UblSharpExtensions
         {
             throw new InvalidOperationException($"Failed to serialize invoice to XML: {ex.Message}", ex);
         }
+    }
+
+    /// <summary>
+    /// Serializes an InvoiceType to UTF-8 bytes without a byte order mark, preserving the same namespaces
+    /// and structure as <see cref="SaveInvoiceToXml"/>.
+    /// </summary>
+    public static byte[] SaveInvoiceToXmlBytes(this InvoiceType invoice)
+    {
+        if (invoice == null)
+            throw new ArgumentNullException(nameof(invoice));
+
+        try
+        {
+            XmlSerializer serializer = new XmlSerializer(typeof(InvoiceType));
+            using MemoryStream memoryStream = new MemoryStream();
+            using (XmlWriter xmlWriter = XmlWriter.Create(memoryStream, new XmlWriterSettings
+            {
+                Indent = true,
+                IndentChars = "  ",
+                Encoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
+                OmitXmlDeclaration = false
+            }))
+            {
+                XmlSerializerNamespaces namespaces = new XmlSerializerNamespaces();
+                namespaces.Add("", "urn:oasis:names:specification:ubl:schema:xsd:Invoice-2");
+                namespaces.Add("cac", "urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2");
+                namespaces.Add("cbc", "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2");
+
+                serializer.Serialize(xmlWriter, invoice, namespaces);
+            }
+
+            return memoryStream.ToArray();
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException($"Failed to serialize invoice to XML: {ex.Message}", ex);
+        }
+    }
+
+    /// <summary>A <see cref="StringWriter"/> that reports UTF-8 so <see cref="XmlWriter"/> emits <c>encoding="utf-8"</c>.</summary>
+    private sealed class Utf8StringWriter : StringWriter
+    {
+        public override Encoding Encoding => new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
     }
 }

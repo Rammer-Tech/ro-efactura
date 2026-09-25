@@ -70,9 +70,56 @@ public class UblSharpExtensionsTests
         act.Should().Throw<ArgumentNullException>();
     }
 
+    [Fact]
+    public void SaveInvoiceToXml_DeclaresUtf8Encoding()
+    {
+        string xml = ZipBuilder.LoadFixture("Valid/valid-380-ron.xml");
+        var invoice = UblSharpExtensions.LoadInvoiceFromXml(xml)!;
+
+        string serialized = invoice.SaveInvoiceToXml();
+
+        serialized.Should().StartWith("<?xml version=\"1.0\" encoding=\"utf-8\"");
+    }
+
+    [Fact]
+    public void SaveInvoiceToXmlBytes_WithNull_ThrowsArgumentNullException()
+    {
+        var act = () => ((UblSharp.InvoiceType)null!).SaveInvoiceToXmlBytes();
+        act.Should().Throw<ArgumentNullException>();
+    }
+
+    [Fact]
+    public void SaveInvoiceToXmlBytes_IsUtf8WithoutBom()
+    {
+        string xml = ZipBuilder.LoadFixture("Valid/valid-380-ron.xml");
+        var invoice = UblSharpExtensions.LoadInvoiceFromXml(xml)!;
+
+        byte[] bytes = invoice.SaveInvoiceToXmlBytes();
+
+        // UTF-8 BOM is EF BB BF; the first bytes of a BOM-less UTF-8 XML document are "<?xm".
+        bytes.Take(3).Should().NotEqual(new byte[] { 0xEF, 0xBB, 0xBF });
+        System.Text.Encoding.UTF8.GetString(bytes, 0, 5).Should().Be("<?xml");
+    }
+
+    [Fact]
+    public void SaveInvoiceToXmlBytes_PreservesRomanianDiacritics()
+    {
+        var invoice = InvoiceBuilder.Valid().Build();
+        invoice.InvoiceLine[0].Item!.Name = new UblSharp.UnqualifiedDataTypes.NameType
+        {
+            Value = "Servicii de consultanță și mentenanță"
+        };
+
+        byte[] bytes = invoice.SaveInvoiceToXmlBytes();
+        string xml = System.Text.Encoding.UTF8.GetString(bytes);
+        var roundTripped = UblSharpExtensions.LoadInvoiceFromXml(xml)!;
+
+        roundTripped.InvoiceLine[0].Item!.Name!.Value.Should().Be("Servicii de consultanță și mentenanță");
+    }
+
     [Theory]
     [InlineData("Valid/valid-381-credit-note.xml", "381")]
-    [InlineData("Valid/valid-389-storno.xml", "389")]
+    [InlineData("Valid/valid-389-self-billing.xml", "389")]
     [InlineData("Valid/valid-384-corrective.xml", "384")]
     [InlineData("Valid/valid-751-activity.xml", "751")]
     public void LoadInvoiceFromXml_ParsesAllInvoiceTypes(string fixturePath, string expectedTypeCode)

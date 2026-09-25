@@ -33,72 +33,70 @@ public class RomanianAddressValidatorTests
         Validate(address).IsValid.Should().BeTrue();
     }
 
-    // ── BR-RO-COUNTY: valid county codes ─────────────────────────────────────
+    // ── BR-RO-110: valid ISO 3166-2:RO county codes ──────────────────────────
 
     [Theory]
-    [InlineData("AB")] [InlineData("AR")] [InlineData("AG")] [InlineData("B")]
-    [InlineData("BC")] [InlineData("BH")] [InlineData("BN")] [InlineData("BT")]
-    [InlineData("BV")] [InlineData("BR")] [InlineData("BZ")] [InlineData("CS")]
-    [InlineData("CL")] [InlineData("CJ")] [InlineData("CT")] [InlineData("CV")]
-    [InlineData("DB")] [InlineData("DJ")] [InlineData("GL")] [InlineData("GR")]
-    [InlineData("GJ")] [InlineData("HR")] [InlineData("HD")] [InlineData("IL")]
-    [InlineData("IS")] [InlineData("IF")] [InlineData("MM")] [InlineData("MH")]
-    [InlineData("MS")] [InlineData("NT")] [InlineData("OT")] [InlineData("PH")]
-    [InlineData("SM")] [InlineData("SJ")] [InlineData("SB")] [InlineData("SV")]
-    [InlineData("TR")] [InlineData("TM")] [InlineData("TL")] [InlineData("VS")]
-    [InlineData("VL")] [InlineData("VN")]
-    public void BrRoCounty_AllValidCountyCodes_Pass(string county)
+    [InlineData("RO-AB")] [InlineData("RO-AR")] [InlineData("RO-AG")] [InlineData("RO-B")]
+    [InlineData("RO-BC")] [InlineData("RO-BH")] [InlineData("RO-BN")] [InlineData("RO-BT")]
+    [InlineData("RO-BV")] [InlineData("RO-BR")] [InlineData("RO-BZ")] [InlineData("RO-CS")]
+    [InlineData("RO-CL")] [InlineData("RO-CJ")] [InlineData("RO-CT")] [InlineData("RO-CV")]
+    [InlineData("RO-DB")] [InlineData("RO-DJ")] [InlineData("RO-GL")] [InlineData("RO-GR")]
+    [InlineData("RO-GJ")] [InlineData("RO-HR")] [InlineData("RO-HD")] [InlineData("RO-IL")]
+    [InlineData("RO-IS")] [InlineData("RO-IF")] [InlineData("RO-MM")] [InlineData("RO-MH")]
+    [InlineData("RO-MS")] [InlineData("RO-NT")] [InlineData("RO-OT")] [InlineData("RO-PH")]
+    [InlineData("RO-SM")] [InlineData("RO-SJ")] [InlineData("RO-SB")] [InlineData("RO-SV")]
+    [InlineData("RO-TR")] [InlineData("RO-TM")] [InlineData("RO-TL")] [InlineData("RO-VS")]
+    [InlineData("RO-VL")] [InlineData("RO-VN")]
+    public void BrRo110_AllIsoCountyCodes_Pass(string county)
     {
-        // Use a non-Bucharest city to avoid triggering the Bucharest sector rule
-        var address = RoAddress("Cluj-Napoca", county == "B" ? "B" : county);
-        if (county == "B")
-        {
-            // Bucharest needs a sector city name; skip county-specific assertion here
-            // (covered separately in Bucharest tests)
-            return;
-        }
-        Validate(address).Errors.Should().NotContain(e => e.ErrorCode == "BR-RO-COUNTY");
+        // RO-B needs a SECTORn city name to also satisfy BR-RO-100; any other county uses a plain city.
+        string city = county == "RO-B" ? "SECTOR1" : "Cluj-Napoca";
+        var address = RoAddress(city, county);
+        Validate(address).Errors.Should().NotContain(e => e.ErrorCode == "BR-RO-110");
     }
 
     [Theory]
+    [InlineData("CJ")]
+    [InlineData("B")]
     [InlineData("XX")]
-    [InlineData("ZZ")]
+    [InlineData("RO-XX")]
     [InlineData("RO")]
     [InlineData("")]
-    [InlineData("CLJ")]
-    public void BrRoCounty_InvalidCountyCode_Fails(string county)
+    [InlineData("ro-cj")]
+    [InlineData("RO-CLJ")]
+    public void BrRo110_InvalidCountyCode_Fails(string county)
     {
         var address = RoAddress("Cluj-Napoca", county);
-        Validate(address).Errors.Should().Contain(e => e.ErrorCode == "BR-RO-COUNTY");
+        Validate(address).Errors.Should().Contain(e => e.ErrorCode == "BR-RO-110");
     }
 
-    // ── BR-RO-BUCHAREST: sector validation ───────────────────────────────────
+    // ── BR-RO-100: Bucharest sector validation ───────────────────────────────
 
     [Theory]
-    [InlineData("Sector 1")]
-    [InlineData("Sector 2")]
-    [InlineData("Sector 3")]
-    [InlineData("Sector 4")]
-    [InlineData("Sector 5")]
-    [InlineData("Sector 6")]
-    [InlineData("sector 3")]   // case-insensitive
-    [InlineData("SECTOR 1")]   // case-insensitive
-    public void BrRoBucharest_ValidSector_Passes(string cityName)
+    [InlineData("SECTOR1")]
+    [InlineData("SECTOR2")]
+    [InlineData("SECTOR3")]
+    [InlineData("SECTOR4")]
+    [InlineData("SECTOR5")]
+    [InlineData("SECTOR6")]
+    public void BrRo100_ValidSectorCode_Passes(string cityName)
     {
-        var address = RoAddress(cityName, "B");
-        Validate(address).Errors.Should().NotContain(e => e.ErrorCode == "BR-RO-BUCHAREST");
+        var address = RoAddress(cityName, "RO-B");
+        Validate(address).Errors.Should().NotContain(e => e.ErrorCode == "BR-RO-100");
     }
 
     [Theory]
     [InlineData("Bucuresti")]
-    [InlineData("Sector 7")]
-    [InlineData("Sector 0")]
-    [InlineData("sector")]
+    [InlineData("Sector 3")]
+    [InlineData("sector3")]
+    [InlineData("SECTOR 1")]
+    [InlineData("SECTOR7")]
+    [InlineData("SECTOR0")]
     [InlineData("")]
-    public void BrRoBucharest_InvalidCityForBucharest_Fails(string cityName)
+    public void BrRo100_InvalidCityForBucharest_Fails(string cityName)
     {
-        var address = RoAddress(cityName, "B");
-        Validate(address).Errors.Should().Contain(e => e.ErrorCode == "BR-RO-BUCHAREST");
+        var address = RoAddress(cityName, "RO-B");
+        Validate(address).Errors.Should().Contain(e => e.ErrorCode == "BR-RO-100");
     }
 
     // ── BR-RO-CITY-REQUIRED ──────────────────────────────────────────────────
@@ -106,15 +104,29 @@ public class RomanianAddressValidatorTests
     [Fact]
     public void BrRoCityRequired_EmptyCityName_Fails()
     {
-        var address = RoAddress("", "CJ");
+        var address = RoAddress("", "RO-CJ");
         Validate(address).Errors.Should().Contain(e => e.ErrorCode == "BR-RO-CITY-REQUIRED");
     }
 
     [Fact]
     public void BrRoCityRequired_NullCityName_Fails()
     {
-        var address = RoAddress("Cluj-Napoca", "CJ");
+        var address = RoAddress("Cluj-Napoca", "RO-CJ");
         address.CityName = null;
         Validate(address).Errors.Should().Contain(e => e.ErrorCode == "BR-RO-CITY-REQUIRED");
+    }
+
+    // ── Role-dependent error codes (Seller vs Buyer) ─────────────────────────
+
+    [Fact]
+    public void BuyerRole_ReportsBrRo111AndBrRo101()
+    {
+        var buyerValidator = new RomanianAddressValidator(RomanianAddressRole.Buyer);
+
+        var invalidCounty = RoAddress("Cluj-Napoca", "CJ");
+        buyerValidator.Validate(invalidCounty).Errors.Should().Contain(e => e.ErrorCode == "BR-RO-111");
+
+        var invalidSector = RoAddress("Bucuresti", "RO-B");
+        buyerValidator.Validate(invalidSector).Errors.Should().Contain(e => e.ErrorCode == "BR-RO-101");
     }
 }

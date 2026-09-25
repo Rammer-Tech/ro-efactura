@@ -4,6 +4,7 @@ using RoEFactura.Validation.Constants;
 using RoEFactura.Validation.PartyValidators;
 using UblSharp;
 using UblSharp.CommonAggregateComponents;
+using UblSharp.UnqualifiedDataTypes;
 
 
 namespace RoEFactura.Validation;
@@ -14,37 +15,58 @@ public class RoCiusUblValidator : AbstractValidator<InvoiceType>
 
     public RoCiusUblValidator()
     {
-        // BR-RO-CIUS: CustomizationID must be RO_CIUS
+        // BR-RO-001: CustomizationID must be the current CIUS-RO 1.0.1 identifier.
         RuleFor(x => x)
             .Must(HasValidCustomizationId)
-            .WithErrorCode("BR-RO-CIUS")
-            .WithMessage($"CustomizationID must be: {RomanianConstants.RoCiusCustomizationId}");
+            .WithErrorCode(RoCiusRuleIds.CustomizationId)
+            .WithMessage($"CustomizationID must be: {RomanianConstants.CustomizationId}");
 
         // BR-RO-010: Invoice number must contain at least one digit
         RuleFor(x => x)
             .Must(HasValidInvoiceNumber)
-            .WithErrorCode("BR-RO-010")
+            .WithErrorCode(RoCiusRuleIds.InvoiceNumberDigit)
             .WithMessage("Invoice number must contain at least one digit.");
 
         // BR-RO-020: Invoice type code must be one of allowed values
         RuleFor(x => x)
             .Must(HasValidInvoiceTypeCode)
-            .WithErrorCode("BR-RO-020")
+            .WithErrorCode(RoCiusRuleIds.InvoiceTypeCode)
             .WithMessage($"Invalid invoice type code. Must be one of: {string.Join(", ", RomanianConstants.ValidInvoiceTypeCodes)}");
 
         // BR-RO-030: If document currency ≠ RON, then VAT currency must be RON
         RuleFor(x => x)
             .Must(HasValidVatCurrency)
             .When(x => x.DocumentCurrencyCode?.Value != "RON")
-            .WithErrorCode("BR-RO-030")
+            .WithErrorCode(RoCiusRuleIds.VatAccountingCurrency)
             .WithMessage("When document currency is not RON, VAT accounting currency must be RON.");
 
-        // BR-RO-040: VAT point date code validation
+        // BR-RO-040: every non-blank InvoicePeriod[*].DescriptionCode[*] (BT-8) must be 3, 35 or 432.
+        // No DescriptionCode present at all (no InvoicePeriod, or none carrying one) skips the rule.
         RuleFor(x => x)
-            .Must(ValidateVatPointDateCode)
-            .When(x => x.TaxPointDate?.Value != null)
-            .WithErrorCode("BR-RO-040")
+            .Must(HasValidVatPointDateCodes)
+            .When(HasAnyVatPointDateCode)
+            .WithErrorCode(RoCiusRuleIds.VatPointDateCode)
             .WithMessage($"VAT point date code must be one of: {string.Join(", ", RomanianConstants.ValidVatPointDateCodes)}");
+
+        // BR-RO-L200 (BT-1 length): only evaluated when the invoice number is present (BR-1 covers absence).
+        RuleFor(x => x)
+            .Must(HasValidInvoiceNumberLength)
+            .When(x => !string.IsNullOrEmpty(x.ID?.Value))
+            .WithErrorCode(RoCiusRuleIds.MaxLength200)
+            .WithMessage($"Invoice number cannot exceed {RomanianConstants.InvoiceNumberMaxLength} characters.");
+
+        // BR-RO-A020: at most 20 Invoice note (BG-1) occurrences.
+        RuleFor(x => x)
+            .Must(x => (x.Note?.Count ?? 0) <= RomanianConstants.MaxInvoiceNotes)
+            .WithErrorCode(RoCiusRuleIds.MaxInvoiceNotes)
+            .WithMessage($"Invoice cannot have more than {RomanianConstants.MaxInvoiceNotes} notes.");
+
+        // BR-RO-L300 (BT-22 length): each Invoice note.
+        RuleForEach(x => x.Note ?? new List<TextType>())
+            .Must(note => NormalizedLength(note?.Value) <= RomanianConstants.InvoiceNoteMaxLength)
+            .WithErrorCode(RoCiusRuleIds.MaxLength300)
+            .WithMessage($"Invoice note cannot exceed {RomanianConstants.InvoiceNoteMaxLength} characters.")
+            .OverridePropertyName("Note");
 
         // Core EN 16931 requirements
         RuleFor(x => x)
@@ -86,12 +108,6 @@ public class RoCiusUblValidator : AbstractValidator<InvoiceType>
             .WithErrorCode("BR-16")
             .WithMessage("Invoice must have at least one line.");
 
-        // BR-RO-A999: Maximum 999 invoice lines
-        RuleFor(x => x.InvoiceLine)
-            .Must(lines => lines == null || lines.Count <= 999)
-            .WithErrorCode("BR-RO-A999")
-            .WithMessage("Invoice cannot have more than 999 lines.");
-
         // Validate each line
         RuleForEach(x => x.InvoiceLine)
             .SetValidator(new InvoiceLineValidator());
@@ -100,10 +116,16 @@ public class RoCiusUblValidator : AbstractValidator<InvoiceType>
         RuleFor(x => x)
             .SetValidator(new TotalsValidator());
 
+        // BR-E-10 / BR-AE-10 / BR-IC-10 / BR-G-10 / BR-O-10: VAT exemption reason, evaluated against the
+        // document-currency TaxTotal's subtotals (the same set BR-CO-14..17 use).
+        RuleForEach(x => GetDocumentCurrencySubtotals(x))
+            .SetValidator(new VatBreakdownValidator())
+            .OverridePropertyName("TaxTotal.TaxSubtotal");
+
         // BR-RO-Z2: 2 decimal places validation for monetary amounts
         RuleFor(x => x)
             .Must(ValidateDecimalPrecision)
-            .WithErrorCode("BR-RO-Z2")
+            .WithErrorCode(RoCiusRuleIds.TwoDecimals)
             .WithMessage("Monetary amounts must have maximum 2 decimal places.");
     }
 
@@ -143,15 +165,52 @@ public class RoCiusUblValidator : AbstractValidator<InvoiceType>
 
     private static bool ContainsDigit(string? invoiceNumber)
     {
-        return !string.IsNullOrWhiteSpace(invoiceNumber) && 
+        return !string.IsNullOrWhiteSpace(invoiceNumber) &&
                InvoiceNumberDigitRegex.IsMatch(invoiceNumber);
     }
 
-    private static bool ValidateVatPointDateCode(InvoiceType invoice)
+    private static IEnumerable<string> GetVatPointDateCodes(InvoiceType invoice)
     {
-        // This would require parsing the VAT point date code from the UBL structure
-        // For now, return true as this is a complex validation
-        return true;
+        return invoice.InvoicePeriod?
+            .SelectMany(period => period?.DescriptionCode ?? new List<CodeType>())
+            .Select(code => code?.Value)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value!)
+            ?? Enumerable.Empty<string>();
+    }
+
+    private static bool HasAnyVatPointDateCode(InvoiceType invoice)
+    {
+        return GetVatPointDateCodes(invoice).Any();
+    }
+
+    /// <summary>
+    /// Non-expression-tree helper: FluentValidation's <c>RuleForEach</c> compiles its selector to an
+    /// <see cref="System.Linq.Expressions.Expression"/>, and C# forbids null-propagating operators
+    /// (<c>?.</c>/<c>??</c>) directly inside an expression tree lambda (CS8072).
+    /// </summary>
+    private static List<TaxSubtotalType> GetDocumentCurrencySubtotals(InvoiceType invoice)
+    {
+        return TotalsValidator.GetDocumentCurrencyTaxTotal(invoice)?.TaxSubtotal ?? new List<TaxSubtotalType>();
+    }
+
+    private static bool HasValidVatPointDateCodes(InvoiceType invoice)
+    {
+        return GetVatPointDateCodes(invoice).All(code => RomanianConstants.ValidVatPointDateCodes.Contains(code.Trim()));
+    }
+
+    private static bool HasValidInvoiceNumberLength(InvoiceType invoice)
+    {
+        return NormalizedLength(invoice?.ID?.Value) <= RomanianConstants.InvoiceNumberMaxLength;
+    }
+
+    /// <summary>Mirrors the schematron's <c>string-length(normalize-space(.))</c>: trims and collapses internal whitespace.</summary>
+    private static int NormalizedLength(string? value)
+    {
+        if (string.IsNullOrEmpty(value))
+            return 0;
+
+        return Regex.Replace(value.Trim(), @"\s+", " ").Length;
     }
 
     private static bool ValidateDecimalPrecision(InvoiceType invoice)
@@ -173,14 +232,14 @@ public class RoCiusUblValidator : AbstractValidator<InvoiceType>
     private static bool HasMaxTwoDecimals(decimal? value)
     {
         if (!value.HasValue) return true;
-        
+
         byte decimalPlaces = BitConverter.GetBytes(decimal.GetBits(value.Value)[3])[2];
         return decimalPlaces <= 2;
     }
 
     private static bool HasValidCustomizationId(InvoiceType invoice)
     {
-        return invoice?.CustomizationID?.Value == RomanianConstants.RoCiusCustomizationId;
+        return invoice?.CustomizationID?.Value == RomanianConstants.CustomizationId;
     }
 
     private static bool HasValidInvoiceNumber(InvoiceType invoice)

@@ -2,7 +2,7 @@
 <Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
          xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
          xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
-  <cbc:CustomizationID>urn:cen.eu:en16931:2017#compliant#urn:efactura.mfinante.ro:RO_CIUS:1.0.0.2021</cbc:CustomizationID>
+  <cbc:CustomizationID>urn:cen.eu:en16931:2017#compliant#urn:efactura.mfinante.ro:CIUS-RO:1.0.1</cbc:CustomizationID>
   <cbc:ID>CN-2024-001</cbc:ID>
   <cbc:IssueDate>2024-01-15</cbc:IssueDate>
   <cbc:InvoiceTypeCode>381</cbc:InvoiceTypeCode>
@@ -12,7 +12,7 @@
       <cac:PartyName><cbc:Name>SC Vanzator SRL</cbc:Name></cac:PartyName>
       <cac:PostalAddress>
         <cbc:CityName>Cluj-Napoca</cbc:CityName>
-        <cbc:CountrySubentity>CJ</cbc:CountrySubentity>
+        <cbc:CountrySubentity>RO-CJ</cbc:CountrySubentity>
         <cac:Country><cbc:IdentificationCode>RO</cbc:IdentificationCode></cac:Country>
       </cac:PostalAddress>
       <cac:PartyTaxScheme>
@@ -30,7 +30,7 @@
       <cac:PartyName><cbc:Name>SC Cumparator SRL</cbc:Name></cac:PartyName>
       <cac:PostalAddress>
         <cbc:CityName>Iasi</cbc:CityName>
-        <cbc:CountrySubentity>IS</cbc:CountrySubentity>
+        <cbc:CountrySubentity>RO-IS</cbc:CountrySubentity>
         <cac:Country><cbc:IdentificationCode>RO</cbc:IdentificationCode></cac:Country>
       </cac:PostalAddress>
       <cac:PartyTaxScheme>

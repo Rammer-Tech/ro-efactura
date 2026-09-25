@@ -13,8 +13,8 @@ internal class UblProcessingService : IUblProcessingService
 {
     private readonly IValidator<InvoiceType> _ublValidator;
     private readonly ILogger<UblProcessingService> _logger;
-    private static readonly object _statsLock = new();
-    private static ProcessingStats _globalStats = new();
+    private readonly object _statsLock = new();
+    private ProcessingStats _stats = new();
 
     public UblProcessingService(
         IValidator<InvoiceType> ublValidator,
@@ -41,17 +41,13 @@ internal class UblProcessingService : IUblProcessingService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex,
-                    "Exception parsing UBL XML for download {AnafDownloadId}. XML preview: {XmlPreview}",
-                    anafDownloadId, Truncate(xmlContent, 500));
+                _logger.LogError(ex, "Exception parsing UBL XML for download {AnafDownloadId}", anafDownloadId);
                 return ProcessingResult<InvoiceType>.Failed($"XML parse error: {ex.Message}");
             }
 
             if (ublInvoice == null)
             {
-                _logger.LogError(
-                    "LoadInvoiceFromXml returned null for {AnafDownloadId}. XML preview: {XmlPreview}",
-                    anafDownloadId, Truncate(xmlContent, 500));
+                _logger.LogError("LoadInvoiceFromXml returned null for {AnafDownloadId}", anafDownloadId);
                 return ProcessingResult<InvoiceType>.Failed("Failed to parse UBL XML content");
             }
 
@@ -133,17 +129,13 @@ internal class UblProcessingService : IUblProcessingService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex,
-                    "Exception parsing UBL XML during validation. XML preview: {XmlPreview}",
-                    Truncate(xmlContent, 500));
+                _logger.LogError(ex, "Exception parsing UBL XML during validation");
                 return ProcessingResult<InvoiceType>.Failed($"XML parse error: {ex.Message}");
             }
 
             if (ublInvoice == null)
             {
-                _logger.LogError(
-                    "LoadInvoiceFromXml returned null during validation. XML preview: {XmlPreview}",
-                    Truncate(xmlContent, 500));
+                _logger.LogError("LoadInvoiceFromXml returned null during validation");
                 return ProcessingResult<InvoiceType>.Failed("Failed to parse UBL XML content");
             }
 
@@ -171,7 +163,13 @@ internal class UblProcessingService : IUblProcessingService
     {
         try
         {
-            string xmlContent = System.Text.Encoding.UTF8.GetString(xmlData);
+            // BOM-safe: StreamReader strips a UTF-8/UTF-16/UTF-32 BOM if present and otherwise assumes UTF-8.
+            string xmlContent;
+            using (StreamReader reader = new StreamReader(new MemoryStream(xmlData), System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true))
+            {
+                xmlContent = await reader.ReadToEndAsync();
+            }
+
             _logger.LogInformation("Processing UBL XML file: {FileName}", fileName);
             
             UpdateStats(stats => stats.TotalProcessed++);
@@ -266,7 +264,7 @@ internal class UblProcessingService : IUblProcessingService
     }
 
     /// <summary>
-    /// Gets processing statistics for monitoring
+    /// Gets processing statistics for monitoring. Isolated per <see cref="UblProcessingService"/> instance.
     /// </summary>
     public ProcessingStats GetProcessingStats()
     {
@@ -274,39 +272,33 @@ internal class UblProcessingService : IUblProcessingService
         {
             return new ProcessingStats
             {
-                TotalProcessed = _globalStats.TotalProcessed,
-                SuccessfullyProcessed = _globalStats.SuccessfullyProcessed,
-                ValidationErrors = _globalStats.ValidationErrors,
-                ProcessingErrors = _globalStats.ProcessingErrors,
-                LastProcessedAt = _globalStats.LastProcessedAt
+                TotalProcessed = _stats.TotalProcessed,
+                SuccessfullyProcessed = _stats.SuccessfullyProcessed,
+                ValidationErrors = _stats.ValidationErrors,
+                ProcessingErrors = _stats.ProcessingErrors,
+                LastProcessedAt = _stats.LastProcessedAt
             };
         }
     }
 
     /// <summary>
-    /// Resets processing statistics
+    /// Resets processing statistics for this instance.
     /// </summary>
     public void ResetProcessingStats()
     {
         lock (_statsLock)
         {
-            _globalStats = new ProcessingStats();
+            _stats = new ProcessingStats();
             _logger.LogInformation("Processing statistics reset");
         }
     }
 
-    private static string Truncate(string? value, int maxLength)
-    {
-        if (string.IsNullOrEmpty(value)) return "(empty)";
-        return value.Length <= maxLength ? value : value[..maxLength] + "...";
-    }
-
-    private static void UpdateStats(Action<ProcessingStats> updateAction)
+    private void UpdateStats(Action<ProcessingStats> updateAction)
     {
         lock (_statsLock)
         {
-            updateAction(_globalStats);
-            _globalStats.LastProcessedAt = DateTime.UtcNow;
+            updateAction(_stats);
+            _stats.LastProcessedAt = DateTime.UtcNow;
         }
     }
 }

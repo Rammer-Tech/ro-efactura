@@ -46,4 +46,15 @@ public class PayeePartyValidatorTests
     {
         _sut.Validate(ValidPayee()).IsValid.Should().BeTrue();
     }
+
+    [Fact]
+    public void PayeeWithoutLegalRegistrationId_DoesNotEmitBrRo130()
+    {
+        // BR-RO-130 depends on the executare=DA upload flag, which is not decidable from the XML;
+        // the local validator must never emit it, regardless of the payee's legal registration id.
+        var payee = ValidPayee();
+        payee.PartyLegalEntity![0].CompanyID = null;
+
+        _sut.Validate(payee).Errors.Should().NotContain(e => e.ErrorCode == "BR-RO-130");
+    }
 }

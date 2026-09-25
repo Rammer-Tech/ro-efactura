@@ -58,7 +58,7 @@
   <cac:LegalMonetaryTotal>
     <cbc:LineExtensionAmount currencyID="RON">100.00</cbc:LineExtensionAmount>
     <cbc:TaxExclusiveAmount currencyID="RON">100.00</cbc:TaxExclusiveAmount>
-    <cbc:TaxInclusiveAmount currencyID="RON">119.00</cbc:TaxInclusiveAmount>
+    <cbc:TaxInclusiveAmount currencyID="RON">200.00</cbc:TaxInclusiveAmount>
     <cbc:PayableAmount currencyID="RON">119.00</cbc:PayableAmount>
   </cac:LegalMonetaryTotal>
   <cac:InvoiceLine>

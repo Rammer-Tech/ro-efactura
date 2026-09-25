@@ -11,8 +11,8 @@
     <cac:Party>
       <cac:PartyName><cbc:Name>SC Vanzator SRL</cbc:Name></cac:PartyName>
       <cac:PostalAddress>
-        <cbc:CityName>Cluj-Napoca</cbc:CityName>
-        <cbc:CountrySubentity>RO-CJ</cbc:CountrySubentity>
+        <cbc:CityName>Bucuresti</cbc:CityName>
+        <cbc:CountrySubentity>RO-B</cbc:CountrySubentity>
         <cac:Country><cbc:IdentificationCode>RO</cbc:IdentificationCode></cac:Country>
       </cac:PostalAddress>
       <cac:PartyTaxScheme>

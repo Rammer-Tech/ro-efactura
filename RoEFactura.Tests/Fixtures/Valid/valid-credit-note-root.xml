@@ -15,7 +15,7 @@
       </cac:PartyName>
       <cac:PostalAddress>
         <cbc:StreetName>Str. Test 1</cbc:StreetName>
-        <cbc:CityName>BUCURESTI</cbc:CityName>
+        <cbc:CityName>SECTOR1</cbc:CityName>
         <cbc:CountrySubentity>RO-B</cbc:CountrySubentity>
         <cac:Country>
           <cbc:IdentificationCode>RO</cbc:IdentificationCode>
