@@ -194,12 +194,18 @@ internal class AnafOAuthClient : IAnafOAuthClient
             try
             {
                 using JsonDocument errorDocument = JsonDocument.Parse(responseContent);
-                if (errorDocument.RootElement.TryGetProperty("error", out JsonElement errorElement))
+                JsonElement root = errorDocument.RootElement;
+
+                if (root.ValueKind == JsonValueKind.Object
+                    && root.TryGetProperty("error", out JsonElement errorElement)
+                    && errorElement.ValueKind == JsonValueKind.String)
                 {
                     errorCode = errorElement.GetString();
                 }
 
-                if (errorDocument.RootElement.TryGetProperty("error_description", out JsonElement descriptionElement))
+                if (root.ValueKind == JsonValueKind.Object
+                    && root.TryGetProperty("error_description", out JsonElement descriptionElement)
+                    && descriptionElement.ValueKind == JsonValueKind.String)
                 {
                     errorDescription = descriptionElement.GetString();
                 }
@@ -207,6 +213,13 @@ internal class AnafOAuthClient : IAnafOAuthClient
             catch (JsonException)
             {
                 // If we can't parse the error response, we proceed with nulls.
+            }
+            catch (InvalidOperationException)
+            {
+                // Best-effort parsing only: an unexpected body shape (e.g. a non-object root, or
+                // "error"/"error_description" present but not a string) must not change the exception
+                // type the caller sees. The HTTP-status-classified TokenExchangeException still fires
+                // below with errorCode/errorDescription left null.
             }
 
             TokenExchangeErrorType errorType = (response.StatusCode, errorCode) switch

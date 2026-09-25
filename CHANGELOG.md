@@ -52,7 +52,10 @@ validation-rule rewrite and `docs/API_REFERENCE.md` for the complete public API 
 - `TokenExchangeErrorType.InvalidGrant` (authorization code or refresh token invalid, expired or revoked).
 - `Token.IssuedAtUtc`/`ExpiresAtUtc`/`RefreshTokenExpiresAtUtc` and `Token.RefreshTokenLifetime` (365 days,
   per current ANAF OAuth policy).
-- `CancellationToken`-required overloads of every existing `IAnafEInvoiceClient` list/download/process member.
+- `CancellationToken`-required overloads of the existing `ListEInvoicesAsync`, `ListPagedEInvoicesAsync`,
+  `ProcessDownloadedInvoiceAsync` and `ProcessMultipleInvoicesAsync` members. (The existing
+  `DownloadEInvoiceAsync` is `[Obsolete]` instead of gaining a `CancellationToken` overload — use the new
+  `DownloadMessageAsync`; the local, non-ANAF `ValidateInvoiceXmlAsync` was not given one either.)
 - `CifNormalizer.Normalize`: strips a leading `RO` prefix and whitespace from a CIF/CUI.
 - `UblSharpExtensions.SaveInvoiceToXmlBytes`: serializes to UTF-8 bytes without a BOM.
 - `Validation.Constants.RoCiusRuleIds`: centralized CIUS-RO/EN 16931 rule-id constants.
@@ -63,7 +66,12 @@ validation-rule rewrite and `docs/API_REFERENCE.md` for the complete public API 
 ### Fixed
 
 - Upload and validate/PDF now target the correct ANAF endpoints and raw `text/plain` request bodies.
-- `eroare` list responses now return an empty list (or empty `Items` + `Error`) instead of throwing.
+- `eroare` list responses no longer silently become an empty result for every ANAF error.
+  `ListPagedEInvoicesAsync` still returns `Items = []` with `Error`/`Title` set for any `eroare` (paged
+  callers, including micro-taxe's sync job, must keep reading `Error`). `ListEInvoicesAsync` now returns
+  an empty list **only** for ANAF's "no messages in this interval" `eroare` (`Nu exista mesaje...`); any
+  other `eroare` (e.g. no query right for the CIF, an invalid CIF) throws `AnafApiException` carrying the
+  ANAF message, instead of being indistinguishable from "no invoices".
 - CIF/CUI values with a leading `RO` prefix or stray whitespace are now normalized before every ANAF call.
 - `SaveInvoiceToXml` now correctly declares `encoding="utf-8"` in the XML prolog. It previously declared
   `encoding="utf-16"` regardless of `XmlWriterSettings.Encoding`, because `XmlWriter` takes the prolog's

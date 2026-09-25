@@ -137,6 +137,7 @@ Change `"Environment": "Test"` to `"Production"` only when you deploy against re
 ### Controller
 
 ```csharp
+using System.Collections.Concurrent;
 using Microsoft.AspNetCore.Mvc;
 using RoEFactura.Models;
 using RoEFactura.Services.Api;
@@ -146,6 +147,12 @@ using RoEFactura.Services.Authentication;
 [Route("api/efactura")]
 public class EFacturaController : ControllerBase
 {
+    // Per-session refresh coordination for a single application instance: prevents two concurrent
+    // requests for the same session from racing to refresh with the same (about-to-be-rotated)
+    // refresh token, where the losing request would otherwise get InvalidGrant. For a multi-instance
+    // deployment, replace this with a distributed lock (e.g. Redis-backed) or equivalent coordination.
+    private static readonly ConcurrentDictionary<string, SemaphoreSlim> RefreshLocks = new();
+
     private readonly IAnafOAuthClient _authClient;
     private readonly IAnafEInvoiceClient _invoiceClient;
     private readonly AnafOAuthOptions _options;
@@ -270,25 +277,50 @@ public class EFacturaController : ControllerBase
     private async Task<string?> GetValidAccessTokenAsync(CancellationToken ct)
     {
         var accessToken = HttpContext.Session.GetString("access_token");
-        var refreshToken = HttpContext.Session.GetString("refresh_token");
         var expiresAtRaw = HttpContext.Session.GetString("expires_at");
         if (string.IsNullOrEmpty(accessToken))
         {
             return null;
         }
 
-        // Only refresh when the access token is actually close to expiry — never on every request,
-        // and never concurrently for the same refresh token (ANAF rotates it on every successful use).
+        // Only refresh when the access token is actually close to expiry — never on every request.
         var expiresAt = DateTimeOffset.TryParse(expiresAtRaw, out var parsed) ? parsed : DateTimeOffset.MinValue;
-        var needsRefresh = expiresAt <= DateTimeOffset.UtcNow.AddMinutes(5);
-
-        if (needsRefresh && !string.IsNullOrEmpty(refreshToken))
+        if (expiresAt > DateTimeOffset.UtcNow.AddMinutes(5))
         {
+            return accessToken;
+        }
+
+        // Refresh path: serialize concurrent requests for this session so they don't race to use the
+        // same (about-to-be-rotated) refresh token. See RefreshLocks above for the multi-instance caveat.
+        var sessionLock = RefreshLocks.GetOrAdd(HttpContext.Session.Id, _ => new SemaphoreSlim(1, 1));
+        await sessionLock.WaitAsync(ct);
+        try
+        {
+            // Re-read: another request for this session may have refreshed while we were waiting.
+            accessToken = HttpContext.Session.GetString("access_token");
+            var refreshToken = HttpContext.Session.GetString("refresh_token");
+            expiresAtRaw = HttpContext.Session.GetString("expires_at");
+            expiresAt = DateTimeOffset.TryParse(expiresAtRaw, out parsed) ? parsed : DateTimeOffset.MinValue;
+            if (expiresAt > DateTimeOffset.UtcNow.AddMinutes(5))
+            {
+                return accessToken;
+            }
+
+            if (string.IsNullOrEmpty(refreshToken))
+            {
+                // Access token is expired (or expiring) and there is no refresh token to use — return
+                // null (never the stale access token) so the caller re-authorizes.
+                return null;
+            }
+
             try
             {
                 var refreshed = await _authClient.RefreshAccessTokenAsync(refreshToken, _options, ct);
                 HttpContext.Session.SetString("access_token", refreshed.AccessToken);
-                HttpContext.Session.SetString("refresh_token", refreshed.RefreshToken ?? refreshToken);
+                // The response may omit a new refresh token; keep the previous one when that happens.
+                HttpContext.Session.SetString(
+                    "refresh_token",
+                    string.IsNullOrEmpty(refreshed.RefreshToken) ? refreshToken : refreshed.RefreshToken);
                 HttpContext.Session.SetString("expires_at", refreshed.ExpiresAtUtc!.Value.ToString("O"));
                 return refreshed.AccessToken;
             }
@@ -298,8 +330,10 @@ public class EFacturaController : ControllerBase
                 return null;
             }
         }
-
-        return accessToken;
+        finally
+        {
+            sessionLock.Release();
+        }
     }
 }
 ```
@@ -417,6 +451,7 @@ if (!local.IsSuccess)
 {
     foreach (var error in local.Errors)
         Console.WriteLine($"local: {error.ErrorCode} {error.ErrorMessage}");
+    return;
 }
 
 var anafValidation = await invoices.ValidateWithAnafAsync(xmlBytes, AnafDocumentStandard.Ubl);
@@ -424,6 +459,7 @@ if (!anafValidation.IsValid)
 {
     foreach (var message in anafValidation.Messages)
         Console.WriteLine($"anaf: {message}");
+    return;
 }
 
 // 2. Upload.

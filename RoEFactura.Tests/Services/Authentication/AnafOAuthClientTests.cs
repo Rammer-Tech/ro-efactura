@@ -213,6 +213,36 @@ public class AnafOAuthClientTests
     }
 
     [Fact]
+    public async Task RefreshAccessTokenAsync_NonStringErrorField_StillClassifiesFromHttpStatus()
+    {
+        // "error" present but not a JSON string (e.g. a gateway rewriting the body) must not leak an
+        // unhandled InvalidOperationException from JsonElement.GetString(); the caller must still get
+        // a TokenExchangeException classified from the HTTP status.
+        var (client, _, _) = CreateClient(HttpStatusCode.Unauthorized, "{\"error\":401}");
+        AnafOAuthOptions options = ValidOptions();
+
+        Func<Task> act = () => client.RefreshAccessTokenAsync("some-refresh-token", options);
+
+        (await act.Should().ThrowAsync<TokenExchangeException>())
+            .Which.ErrorType.Should().Be(TokenExchangeErrorType.AuthenticationFailed);
+    }
+
+    [Fact]
+    public async Task RefreshAccessTokenAsync_NonObjectErrorBody_StillClassifiesFromHttpStatus()
+    {
+        // A non-object JSON root (e.g. "[]") must not leak an unhandled InvalidOperationException from
+        // JsonElement.TryGetProperty(); the caller must still get a TokenExchangeException classified
+        // from the HTTP status.
+        var (client, _, _) = CreateClient(HttpStatusCode.Unauthorized, "[]");
+        AnafOAuthOptions options = ValidOptions();
+
+        Func<Task> act = () => client.RefreshAccessTokenAsync("some-refresh-token", options);
+
+        (await act.Should().ThrowAsync<TokenExchangeException>())
+            .Which.ErrorType.Should().Be(TokenExchangeErrorType.AuthenticationFailed);
+    }
+
+    [Fact]
     public async Task RefreshAccessTokenAsync_EmptyRefreshToken_ThrowsArgumentException()
     {
         var (client, _, _) = CreateClient();

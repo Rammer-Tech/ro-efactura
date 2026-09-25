@@ -17,7 +17,10 @@ deliberately implements a curated subset (see "Out of scope" below).
 ## Sources
 
 - Official artefact: `https://mfinante.gov.ro/static/10/eFactura/ro16931-ubl-1.0.9.zip` (RO_CIUS schematron
-  version 1.0.9, last update 2024-05-78; RO_CIUS business-rule version 1.0.1, last update 2022-10-18).
+  version 1.0.9; RO_CIUS business-rule version 1.0.1, last update 2022-10-18). The schematron's own header
+  comment (`cius-ro/RO16931-rules.sch`) gives version 1.0.9's own last-update date as `2024-05-78`, which is
+  not a valid calendar date -- that is a typo in ANAF's source artefact itself, not a transcription error
+  here; it is not repeated as if it were a verified date.
 - Files consulted: `cius-ro/RO16931-rules.sch` (Romanian BR-RO-* rules), `UBL/EN16931-UBL-model.sch` (EN 16931
   core BR-*/BR-CO-*/BR-CO-1x/BR-{S,Z,E,AE,IC,G,O}-0x formulas bound to UBL XPaths).
 - Step 0 verification (2026-09-25, orchestrator decision): the zip was not downloaded fresh; the WP-C worktree

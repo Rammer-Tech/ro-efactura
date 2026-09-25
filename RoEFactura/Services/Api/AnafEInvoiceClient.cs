@@ -164,8 +164,17 @@ internal sealed class AnafEInvoiceClient : IAnafEInvoiceClient
 
         string content = await response.Content.ReadAsStringAsync(cancellationToken);
 
-        if (AnafResponseParser.TryParseEroare(content, out _, out _))
-            return [];
+        if (AnafResponseParser.TryParseEroare(content, out string? eroare, out _))
+        {
+            // ANAF uses the same {"eroare": ...} shape both for "no messages in this interval" and for
+            // real errors (e.g. no query right for this CIF, an invalid CIF). Only the former is a
+            // legitimately empty result; anything else must not be silently swallowed into `[]`, or a
+            // sync process would read "no invoices" instead of an actionable error.
+            if (eroare!.StartsWith("Nu exista mesaje", StringComparison.OrdinalIgnoreCase))
+                return [];
+
+            throw new AnafApiException(HttpStatusCode.OK, eroare, content, [eroare]);
+        }
 
         ListEInvoicesAnafResponse? result;
         try

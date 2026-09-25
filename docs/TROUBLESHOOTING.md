@@ -91,9 +91,10 @@ Actions:
 2. Discard the stored token and send the user through `GenerateAuthorizationUrl` again to obtain a
    fresh authorization code.
 3. If this happens right after a successful `RefreshAccessTokenAsync`, check you are not calling
-   refresh twice concurrently with the same refresh token: ANAF typically issues a new refresh token on
-   a successful refresh, so reusing an already-superseded one can fail with `InvalidGrant`. Always store
-   and use the newest `Token.RefreshToken`.
+   refresh twice concurrently with the same refresh token. A successful response may include a new
+   refresh token, but it may also omit one — if `Token.RefreshToken` comes back null or empty, keep
+   using the previous refresh token; otherwise store and use the new `Token.RefreshToken`. Reusing an
+   already-superseded refresh token fails with `InvalidGrant`.
 
 ### OAuth callback not reached
 

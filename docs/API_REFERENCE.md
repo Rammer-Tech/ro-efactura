@@ -102,8 +102,15 @@ string authUrl = anafOAuthClient.GenerateAuthorizationUrl(options, state);
 // After callback:
 Token token = await anafOAuthClient.ExchangeAuthorizationCodeAsync(code, options, cancellationToken);
 
-// Before expiry:
-Token refreshed = await anafOAuthClient.RefreshAccessTokenAsync(token.RefreshToken!, options, cancellationToken);
+// Before expiry — RefreshAccessTokenAsync requires a non-null, non-empty refresh token:
+if (string.IsNullOrEmpty(token.RefreshToken))
+{
+    // Re-authorize via GenerateAuthorizationUrl instead; there is nothing to refresh with.
+}
+else
+{
+    Token refreshed = await anafOAuthClient.RefreshAccessTokenAsync(token.RefreshToken, options, cancellationToken);
+}
 ```
 
 Methods:
@@ -112,7 +119,10 @@ Methods:
 - `Task<Token> ExchangeAuthorizationCodeAsync(string code, string clientId, string clientSecret, string redirectUri)`
 - `Task<Token> ExchangeAuthorizationCodeAsync(string code, AnafOAuthOptions options)`
 - `Task<Token> ExchangeAuthorizationCodeAsync(string code, AnafOAuthOptions options, CancellationToken cancellationToken)` *(new in 2.0.0)*
-- `Task<Token> RefreshAccessTokenAsync(string refreshToken, AnafOAuthOptions options, CancellationToken cancellationToken = default)` *(new in 2.0.0)*
+- `Task<Token> RefreshAccessTokenAsync(string refreshToken, AnafOAuthOptions options, CancellationToken cancellationToken = default)` *(new in 2.0.0)* —
+  precondition: `refreshToken` must be non-null/non-empty (throws `ArgumentException` otherwise); the
+  response may omit a new refresh token, in which case `Token.RefreshToken` comes back empty and the
+  caller must keep using the previous one.
 
 All members are unchanged from 1.x except the two marked "new in 2.0.0"; no optional parameter was
 added to any existing member.
@@ -146,9 +156,11 @@ added to any existing member.
 
 ### `IAnafEInvoiceClient`
 
-Every member below accepts a `CancellationToken` (required on the new overloads of members kept from
-1.x, optional — defaulting to `default` — on brand-new members). Unless noted, calls target the
-authenticated base URL resolved from `RoEFacturaOptions` and send `Authorization: Bearer {token}`.
+Every ANAF-calling member below accepts a `CancellationToken` (required on the new overloads of members
+kept from 1.x, optional — defaulting to `default` — on brand-new members), except the obsolete
+`DownloadEInvoiceAsync` (no `CancellationToken` parameter; use `DownloadMessageAsync` instead) and the
+local `ValidateInvoiceXmlAsync` (no ANAF call, so no `CancellationToken`). Unless noted, calls target
+the authenticated base URL resolved from `RoEFacturaOptions` and send `Authorization: Bearer {token}`.
 
 #### Upload
 
@@ -216,8 +228,17 @@ Methods (1.x members kept **verbatim**, each with a new `CancellationToken`-requ
 - `Task<EInvoiceAnafPagedListResponse> ListPagedEInvoicesAsync(string token, long startMilliseconds, long endMilliseconds, string cui, string? filter, int page, CancellationToken cancellationToken)`
 
 `days` must be between 1 and 60 (`ArgumentException` if ≤ 0, `ArgumentOutOfRangeException` if > 60).
-A JSON `eroare` response returns an empty list, or empty `Items` with `Error`/`Title` set, instead of
-throwing. `cui` is normalized via `CifNormalizer` (accepts an optional `RO` prefix and whitespace).
+`cui` is normalized via `CifNormalizer` (accepts an optional `RO` prefix and whitespace).
+
+A JSON `eroare` response is handled differently by the two members, because ANAF uses the same shape
+both for "no messages in this interval" and for real errors (e.g. no query right for the CIF, an
+invalid CIF):
+- `ListPagedEInvoicesAsync` always returns the DTO with `Items = []` and `Error`/`Title` set from the
+  `eroare`/`titlu` fields; it never throws for an `eroare` body. Callers (including micro-taxe's sync
+  job) must check `Error`.
+- `ListEInvoicesAsync` returns an empty list only when the `eroare` text starts with `"Nu exista
+  mesaje"` (ANAF's "no messages" wording). Any other `eroare` throws `AnafApiException` with the ANAF
+  message in both `Message` and `Errors`, so a real error is never silently read as "no invoices".
 
 Notes on `filter`:
 - Passed through as ANAF query parameter `filtru`. Accepted values: `E` (ERORI FACTURA), `T` (FACTURA

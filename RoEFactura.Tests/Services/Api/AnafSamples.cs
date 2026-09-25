@@ -118,6 +118,10 @@ public static class AnafSamples
     public const string ListEroare =
         """{"eroare":"Nu exista mesaje in ultimele 60 zile","titlu":"Lista Mesaje"}""";
 
+    /// <summary>A real ANAF list error (not the "no messages" case) -- must not be treated as an empty list.</summary>
+    public const string ListEroareNoRight =
+        """{"eroare":"Nu aveti drept in SPV pentru CIF=8000000000","titlu":"Lista Mesaje"}""";
+
     public const string DownloadEroare =
         """{"eroare":"Pentru id=21 nu exista inregistrata nici o factura","titlu":"Descarcare mesaj"}""";
 

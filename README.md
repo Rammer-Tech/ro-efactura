@@ -15,7 +15,9 @@ refresh tokens) for web apps. It also provides local UBL 2.1 processing with CIU
   (paged and non-paged), `descarcare`, public `validare` and `transformare` (XML→PDF)
 - TEST environment by default; Production is an explicit opt-in
 - Typed errors (`AnafApiException`, `AnafRateLimitException` with `RetryAfter`) and a `CancellationToken`
-  on every ANAF call (required on the new overloads of members kept from 1.x, optional on brand-new members)
+  on every ANAF call (required on the new overloads of members kept from 1.x, optional on brand-new
+  members) — except the obsolete, disk-based `DownloadEInvoiceAsync` and the local (no-ANAF-call)
+  `ValidateInvoiceXmlAsync`, neither of which takes one
 - Local UBL 2.1 processing and CIUS-RO 1.0.1 validation (see [docs/VALIDATION_RULES.md](docs/VALIDATION_RULES.md))
 - Invoice analysis extension methods
 - Processing statistics (per service instance) and `ILogger` integration; no PII or XML content is logged
@@ -185,8 +187,10 @@ services.AddRoEFacturaWithOAuth(new AnafOAuthOptions
 
 ## Operations
 
-All operations below take a `CancellationToken` (optional on the new members, required on the
-`CancellationToken`-overloads of the members kept from 1.x).
+All ANAF-calling operations below take a `CancellationToken` (optional on the new members, required on
+the `CancellationToken`-overloads of the members kept from 1.x). Two exceptions make no ANAF call and
+take no `CancellationToken`: the local `ValidateInvoiceXmlAsync` and the obsolete, disk-based
+`DownloadEInvoiceAsync` (use `DownloadMessageAsync` instead).
 
 ### Upload / uploadb2c
 
@@ -293,8 +297,16 @@ byte[] unvalidatedPdf = await invoices.ConvertToPdfAsync(xmlBytes, AnafDocumentS
 ### Refresh token
 
 ```csharp
-var refreshed = await auth.RefreshAccessTokenAsync(token.RefreshToken!, options, CancellationToken.None);
-// refreshed.AccessToken, refreshed.RefreshToken (usually a new one), refreshed.ExpiresAtUtc
+if (string.IsNullOrEmpty(token.RefreshToken))
+{
+    // No refresh token available — re-authorize instead (see GenerateAuthorizationUrl above).
+}
+else
+{
+    var refreshed = await auth.RefreshAccessTokenAsync(token.RefreshToken, options, CancellationToken.None);
+    // refreshed.AccessToken, refreshed.ExpiresAtUtc.
+    // refreshed.RefreshToken may be empty — if so, keep using token.RefreshToken for the next refresh.
+}
 ```
 
 ## Error handling
@@ -394,7 +406,12 @@ var uploadResult = await invoices.UploadAsync(
 ```csharp
 if (token.ExpiresAtUtc <= DateTimeOffset.UtcNow.AddMinutes(5))
 {
-    token = await auth.RefreshAccessTokenAsync(token.RefreshToken!, options, ct);
+    if (string.IsNullOrEmpty(token.RefreshToken))
+    {
+        // No refresh token on file — re-authorize instead of calling RefreshAccessTokenAsync.
+        return RedirectToAuthorize();
+    }
+    token = await auth.RefreshAccessTokenAsync(token.RefreshToken, options, ct);
 }
 ```
 

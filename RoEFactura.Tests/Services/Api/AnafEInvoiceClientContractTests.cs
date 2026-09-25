@@ -321,6 +321,19 @@ public class AnafEInvoiceClientContractTests
     }
 
     [Fact]
+    public async Task ListEInvoicesAsync_RealAnafError_ThrowsAnafApiExceptionWithMessage()
+    {
+        (AnafEInvoiceClient client, _) = CreateClient(
+            responder: RecordingHttpMessageHandler.Returning(HttpStatusCode.OK, AnafSamples.ListEroareNoRight, "application/json"));
+
+        Func<Task> act = () => client.ListEInvoicesAsync(FakeToken, 30, "12345678", null, CancellationToken.None);
+
+        var thrown = await act.Should().ThrowAsync<AnafApiException>();
+        thrown.Which.Message.Should().Contain("Nu aveti drept in SPV");
+        thrown.Which.Errors.Should().ContainSingle(m => m.Contains("Nu aveti drept in SPV"));
+    }
+
+    [Fact]
     public async Task ListEInvoicesAsync_DaysAbove60_ThrowsArgumentOutOfRange()
     {
         (AnafEInvoiceClient client, _) = CreateClient();

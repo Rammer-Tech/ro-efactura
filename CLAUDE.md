@@ -164,7 +164,9 @@ authentication.
 4. Code exchanged for JWT access token using Basic authentication against `options.TokenUrl`
 5. Bearer token used for subsequent API calls
 6. `RefreshAccessTokenAsync(refreshToken, options, ct)` exchanges a refresh token for a new access
-   token (and, per current ANAF policy, a new refresh token) without a full re-authorization
+   token without a full re-authorization. The response may also contain a new refresh token; if it
+   does not, `Token.RefreshToken` comes back empty and the caller must keep using the previous
+   refresh token
 
 ### Romanian CIUS-RO 1.0.1 Validation
 
@@ -230,7 +232,12 @@ var invoices = await anafEInvoiceClient.ListEInvoicesAsync(token.AccessToken, da
 // Refresh before expiry:
 if (token.ExpiresAtUtc <= DateTimeOffset.UtcNow.AddMinutes(5))
 {
-    token = await anafOAuthClient.RefreshAccessTokenAsync(token.RefreshToken!, options, ct);
+    if (string.IsNullOrEmpty(token.RefreshToken))
+    {
+        // No refresh token on file (e.g. a prior refresh response omitted one) — re-authorize instead.
+        return RedirectToAuthorize();
+    }
+    token = await anafOAuthClient.RefreshAccessTokenAsync(token.RefreshToken, options, ct);
 }
 ```
 
