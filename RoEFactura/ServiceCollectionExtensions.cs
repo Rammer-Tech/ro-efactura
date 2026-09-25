@@ -2,6 +2,7 @@ using FluentValidation;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using RoEFactura.Models;
 using RoEFactura.Services.Api;
 using RoEFactura.Services.Authentication;
@@ -19,23 +20,43 @@ public static class ServiceCollectionExtensions
         // Ensure logging is available (idempotent - safe if already registered)
         services.AddLogging();
 
+        // Bind RoEFactura:* options (environment, base URL override). A missing section, key or
+        // default value all resolve to the Test environment.
+        OptionsBuilder<RoEFacturaOptions> optionsBuilder = services.AddOptions<RoEFacturaOptions>();
+        if (configuration != null)
+        {
+            optionsBuilder.Bind(configuration.GetSection(RoEFacturaOptions.SectionName));
+        }
+
         // Register FluentValidation validators
         services.AddValidatorsFromAssemblyContaining<RoCiusUblValidator>();
         services.AddScoped<IValidator<InvoiceType>, RoCiusUblValidator>();
 
-        // Register HTTP clients for API access
-        services.AddHttpClient<AnafEInvoiceClient>();
-
-        // Register HttpClient factory for ANAF OAuth  
+        // Register the typed ANAF e-invoice client and the HttpClient factory for ANAF OAuth
+        services.AddHttpClient<IAnafEInvoiceClient, AnafEInvoiceClient>();
         services.AddHttpClient();
 
         // Register service interfaces with internal implementations
         services.AddScoped<IAnafOAuthClient, AnafOAuthClient>();
-        services.AddScoped<IAnafEInvoiceClient, AnafEInvoiceClient>();
         services.AddScoped<IUblProcessingService, UblProcessingService>();
-        
+
         // Register utilities
         services.AddTransient<XmlFileDeserializer>();
+
+        return services;
+    }
+
+    /// <summary>
+    /// Adds RoEFactura services and configures <see cref="RoEFacturaOptions"/> programmatically
+    /// (e.g. to set <see cref="RoEFacturaOptions.Environment"/> or <see cref="RoEFacturaOptions.ApiBaseUrl"/>
+    /// without a configuration section).
+    /// </summary>
+    public static IServiceCollection AddRoEFactura(this IServiceCollection services, Action<RoEFacturaOptions> configure)
+    {
+        ArgumentNullException.ThrowIfNull(configure);
+
+        AddRoEFactura(services, (IConfiguration?)null);
+        services.Configure(configure);
 
         return services;
     }

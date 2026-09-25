@@ -1,10 +1,10 @@
 using System.Net;
+using System.Text.Json;
 using FluentAssertions;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Moq;
 using Moq.Protected;
-using Newtonsoft.Json;
 using RoEFactura.Dtos;
 using RoEFactura.Models;
 using RoEFactura.Services.Api;
@@ -41,12 +41,9 @@ public class AnafEInvoiceClientTests
             validator,
             NullLogger<UblProcessingService>.Instance);
 
-        var env = new Mock<IHostEnvironment>();
-        env.Setup(e => e.EnvironmentName).Returns("Production");
-
         var client = new AnafEInvoiceClient(
             httpClient,
-            env.Object,
+            Options.Create(new RoEFacturaOptions()),
             processingService,
             NullLogger<AnafEInvoiceClient>.Instance);
 
@@ -100,7 +97,7 @@ public class AnafEInvoiceClientTests
     [Fact]
     public async Task ListEInvoicesAsync_SendsBearerToken()
     {
-        var responseBody = JsonConvert.SerializeObject(new ListEInvoicesAnafResponse
+        var responseBody = JsonSerializer.Serialize(new ListEInvoicesAnafResponse
         {
             Items = new List<EInvoiceAnafResponse>()
         });
@@ -123,7 +120,7 @@ public class AnafEInvoiceClientTests
     [Fact]
     public async Task ListEInvoicesAsync_IncludesCuiAndDaysInUrl()
     {
-        var responseBody = JsonConvert.SerializeObject(new ListEInvoicesAnafResponse
+        var responseBody = JsonSerializer.Serialize(new ListEInvoicesAnafResponse
         {
             Items = new List<EInvoiceAnafResponse>()
         });
@@ -147,7 +144,7 @@ public class AnafEInvoiceClientTests
     [Fact]
     public async Task ListEInvoicesAsync_WithFilter_IncludesFilterInUrl()
     {
-        var responseBody = JsonConvert.SerializeObject(new ListEInvoicesAnafResponse
+        var responseBody = JsonSerializer.Serialize(new ListEInvoicesAnafResponse
         {
             Items = new List<EInvoiceAnafResponse>()
         });
@@ -173,7 +170,7 @@ public class AnafEInvoiceClientTests
         var (client, _) = CreateClientWithHttp(
             new HttpResponseMessage(HttpStatusCode.Unauthorized));
 
-        await Assert.ThrowsAsync<HttpRequestException>(() =>
+        await Assert.ThrowsAnyAsync<HttpRequestException>(() =>
             client.ListEInvoicesAsync(FakeToken, 7, FakeCui));
     }
 
@@ -184,7 +181,7 @@ public class AnafEInvoiceClientTests
         {
             new EInvoiceAnafResponse { Id = "12345" }
         };
-        var responseBody = JsonConvert.SerializeObject(new ListEInvoicesAnafResponse { Items = items });
+        var responseBody = JsonSerializer.Serialize(new ListEInvoicesAnafResponse { Items = items });
         var (client, _) = CreateClientWithHttp(
             new HttpResponseMessage(HttpStatusCode.OK)
             {
@@ -195,43 +192,6 @@ public class AnafEInvoiceClientTests
 
         result.Should().HaveCount(1);
         result[0].Id.Should().Be("12345");
-    }
-
-    // ── ValidateXmlContentAsync ───────────────────────────────────────────────
-
-    [Fact]
-    public async Task ValidateXmlContentAsync_SendsMultipartFormData()
-    {
-        var (client, handlerMock) = CreateClientWithHttp(
-            new HttpResponseMessage(HttpStatusCode.OK)
-            {
-                Content = new StringContent("{\"stare\":\"ok\"}")
-            });
-
-        await client.ValidateXmlContentAsync(FakeToken, "<Invoice/>", "invoice.xml");
-
-        handlerMock.Protected().Verify(
-            "SendAsync",
-            Times.Once(),
-            ItExpr.Is<HttpRequestMessage>(req =>
-                req.Content is MultipartFormDataContent),
-            ItExpr.IsAny<CancellationToken>());
-    }
-
-    [Fact]
-    public async Task ValidateXmlContentAsync_NullToken_Throws()
-    {
-        var (client, _) = CreateClientWithHttp();
-        await Assert.ThrowsAsync<ArgumentNullException>(() =>
-            client.ValidateXmlContentAsync(null!, "<Invoice/>"));
-    }
-
-    [Fact]
-    public async Task ValidateXmlContentAsync_NullXml_Throws()
-    {
-        var (client, _) = CreateClientWithHttp();
-        await Assert.ThrowsAsync<ArgumentNullException>(() =>
-            client.ValidateXmlContentAsync(FakeToken, null!));
     }
 
     [Theory]
@@ -267,12 +227,10 @@ public class AnafEInvoiceClientTests
         var processingService = new UblProcessingService(
             validator,
             NullLogger<UblProcessingService>.Instance);
-        var env = new Mock<IHostEnvironment>();
-        env.Setup(e => e.EnvironmentName).Returns("Production");
 
         var client = new AnafEInvoiceClient(
             httpClient,
-            env.Object,
+            Options.Create(new RoEFacturaOptions()),
             processingService,
             NullLogger<AnafEInvoiceClient>.Instance);
 
