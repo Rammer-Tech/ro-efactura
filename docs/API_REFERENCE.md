@@ -1,6 +1,6 @@
 # RoEFactura API Reference
 
-This document describes the public API surface of the `RoEFactura` NuGet package (v2.0.0). It is
+This document describes the public API surface of the `RoEFactura` NuGet package (v2.1.0). It is
 organized by feature area and includes usage notes for each interface and model. For validation-rule
 details, see [VALIDATION_RULES.md](VALIDATION_RULES.md); for migration from 1.x, see the "Migrating
 from 1.x" section in the [README](../README.md).
@@ -40,7 +40,9 @@ Signatures:
 
 Notes:
 - `AddRoEFactura(...)` registers `IAnafOAuthClient`, `IAnafEInvoiceClient` (as a typed `HttpClient`),
-  and `IUblProcessingService`.
+  and `IUblProcessingService`, plus *(2.1.0)* `IEInvoiceXmlGenerator` as a singleton via `TryAdd` (every
+  overload, including `AddRoEFacturaWithOAuth`, goes through it; register your own implementation first
+  to override it).
 - `AddRoEFacturaWithOAuth(...)` validates `AnafOAuthOptions` before registering and throws
   `ArgumentException`/`InvalidOperationException` if invalid.
 - A missing `RoEFactura` configuration section, a missing key, or an unset `Environment` value all
@@ -334,6 +336,57 @@ validation failures, throws `AnafApiException` with `Errors` populated from the 
 
 `ValidateXmlAsync`, `ValidateXmlContentAsync`, `UploadXmlAsync`, `UploadXmlContentAsync` were removed.
 Use `ValidateWithAnafAsync`/`UploadAsync` instead (see "Migrating from 1.x" in the README).
+
+## XML Generation *(new in 2.1.0)*
+
+Namespace `RoEFactura.Generation`. Full guide with one example per case: [XML_GENERATION.md](XML_GENERATION.md).
+
+### `IEInvoiceXmlGenerator` / `EInvoiceXmlGenerator`
+
+```csharp
+public interface IEInvoiceXmlGenerator
+{
+    byte[] Generate(EInvoiceDocument document);
+}
+
+public sealed class EInvoiceXmlGenerator : IEInvoiceXmlGenerator { }
+```
+
+Validates the document, computes the totals with `EInvoiceTotalsCalculator` and returns a CIUS-RO UBL 2.1
+Invoice (TypeCode 380, currency RON) as UTF-8 bytes without a BOM, first line
+`<?xml version="1.0" encoding="utf-8"?>`. Stateless and thread-safe. Throws `ArgumentNullException` for a
+null document and `ArgumentException` (message `[<rule id>] ...`, `ParamName` = member path) for any
+rule violation.
+
+### Document model (`sealed record`s with `init` properties)
+
+| Type | Members |
+|---|---|
+| `EInvoiceDocument` | required `Number`, `IssueDate` (`DateOnly`), `Seller`, `Buyer`, `Lines`; optional `DueDate`, `CurrencyCode` (`"RON"`), `Notes`, `Payment`, `PaymentTerms`, `BillingReference`, `VatExemption` |
+| `EInvoiceSeller` | required `Name`, `Cui`, `IsVatPayer`, `Address`; optional `TradeRegisterNumber` (BT-33) |
+| `EInvoiceBuyer` | required `Name`, `Address`; optional `IsNaturalPerson`, `LegalRegistrationId` (BT-47; `0000000000000` for a foreign buyer without a Romanian CUI/NIF, see docs/XML_GENERATION.md "ERRIdentif"), `VatId` (BT-48); const `NaturalPersonWithoutCnpId = "0000000000000"` |
+| `EInvoiceAddress` | required `Street`, `City`, `CountryCode`; optional `County`, `PostalCode` |
+| `EInvoiceLine` | required `Name`, `Quantity`, `UnitPrice`, `VatCategory`; optional `UnitCode` (`"H87"`), `VatRate`, `Description`, `Note` |
+| `EInvoiceVatCategory` | enum `Standard` (S), `Exempt` (E), `NotSubject` (O) |
+| `EInvoiceVatExemption(string? ReasonCode, string? Reason)` | BT-121/BT-120 of the single Exempt breakdown |
+| `EInvoicePayment(string Iban)` | credit transfer; const `CreditTransferPaymentMeansCode = "30"` |
+| `EInvoiceBillingReference(string Number, DateOnly IssueDate)` | preceding invoice (BG-3), for storno |
+
+### `EInvoiceTotalsCalculator`
+
+`public static EInvoiceTotals Calculate(EInvoiceDocument document)` — line nets (BT-131), BT-106, BT-109,
+BT-110, BT-112, BT-115 and the VAT breakdown, rounded to 2 decimals away from zero; negative values allowed.
+
+- `EInvoiceTotals(IReadOnlyList<decimal> LineNetAmounts, decimal LineExtensionAmount, decimal TaxExclusiveAmount, decimal TaxAmount, decimal TaxInclusiveAmount, decimal PayableAmount, IReadOnlyList<EInvoiceVatBreakdown> VatBreakdown)`
+- `EInvoiceVatBreakdown(EInvoiceVatCategory Category, decimal Rate, decimal TaxableAmount, decimal TaxAmount)` —
+  ordered Standard by rate descending, then Exempt, then NotSubject.
+
+### `RomanianAddressConverter`
+
+- `public static string ToCountyCode(string county)` — `Cluj`/`CJ`/`RO-CJ`/`județul Cluj` → `RO-CJ`, `București` → `RO-B`; unknown → `ArgumentException` `[BR-RO-110]`
+- `public static bool TryToCountyCode(string? county, out string code)`
+- `public static string ToBucharestSector(string city)` — `Sector 3`/`sectorul 3`/`S3`/`3` → `SECTOR3`; otherwise `ArgumentException` `[BR-RO-100]`
+- `public static RomanianAddress Convert(string county, string city)` — `RomanianAddress(string CountySubentity, string CityName)`
 
 ## UBL Processing
 

@@ -4,6 +4,7 @@ using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Http;
+using RoEFactura.Generation;
 using RoEFactura.Models;
 using RoEFactura.Services.Api;
 using Xunit;
@@ -119,5 +120,32 @@ public class ServiceCollectionExtensionsTests
         Action act = () => scope.ServiceProvider.GetRequiredService<IAnafEInvoiceClient>();
 
         act.Should().Throw<InvalidOperationException>();
+    }
+
+    [Fact]
+    public void AddRoEFactura_Default_ResolvesEInvoiceXmlGenerator()
+    {
+        (IServiceProvider provider, _) = BuildProvider(s => s.AddRoEFactura());
+
+        IEInvoiceXmlGenerator generator = provider.GetRequiredService<IEInvoiceXmlGenerator>();
+
+        generator.Should().BeOfType<EInvoiceXmlGenerator>();
+        provider.GetRequiredService<IEInvoiceXmlGenerator>().Should().BeSameAs(generator);
+    }
+
+    [Fact]
+    public void AddRoEFacturaWithOAuth_Configuration_ResolvesEInvoiceXmlGenerator()
+    {
+        Dictionary<string, string?> settings = new()
+        {
+            ["AnafOAuth:ClientId"] = "client-id",
+            ["AnafOAuth:ClientSecret"] = "client-secret",
+            ["AnafOAuth:RedirectUri"] = "https://app.example.test/callback"
+        };
+        IConfiguration configuration = new ConfigurationBuilder().AddInMemoryCollection(settings).Build();
+
+        (IServiceProvider provider, _) = BuildProvider(s => s.AddRoEFacturaWithOAuth(configuration));
+
+        provider.GetRequiredService<IEInvoiceXmlGenerator>().Should().BeOfType<EInvoiceXmlGenerator>();
     }
 }
