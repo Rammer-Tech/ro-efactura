@@ -12,10 +12,10 @@ namespace RoEFactura.Tests.Generation;
 public class RomanianAddressConverterTests
 {
     [Theory]
-    [InlineData("Brașov", "RO-BV")]
-    [InlineData("Braşov", "RO-BV")]
+    [InlineData("Bra\u0219ov", "RO-BV")]
+    [InlineData("Bra\u015Fov", "RO-BV")]
     [InlineData("BRASOV", "RO-BV")]
-    [InlineData("județul Brașov", "RO-BV")]
+    [InlineData("jude\u021Bul Bra\u0219ov", "RO-BV")]
     [InlineData("Cluj", "RO-CJ")]
     public void ToCountyCode_FullNameWithDiacritics_ReturnsIsoCode(string county, string expected)
     {
@@ -31,7 +31,7 @@ public class RomanianAddressConverterTests
     }
 
     [Theory]
-    [InlineData("București")]
+    [InlineData("Bucure\u0219ti")]
     [InlineData("Municipiul Bucuresti")]
     [InlineData("B")]
     public void ToCountyCode_Bucharest_ReturnsRoB(string county)
@@ -86,7 +86,7 @@ public class RomanianAddressConverterTests
     [Fact]
     public void Convert_BucharestWithoutSector_ThrowsArgumentException()
     {
-        Action act = () => RomanianAddressConverter.Convert("București", "București");
+        Action act = () => RomanianAddressConverter.Convert("Bucure\u0219ti", "Bucure\u0219ti");
 
         act.Should().Throw<ArgumentException>()
             .WithMessage("[BR-RO-100] Bucharest address requires a sector (1-6)*")
@@ -99,7 +99,7 @@ public class RomanianAddressConverterTests
         RomanianAddress address = RomanianAddressConverter.Convert("jud. Cluj", "  Cluj-Napoca ");
 
         address.Should().Be(new RomanianAddress("RO-CJ", "Cluj-Napoca"));
-        RomanianAddressConverter.Convert("București", "București, Sector 6")
+        RomanianAddressConverter.Convert("Bucure\u0219ti", "Bucure\u0219ti, Sector 6")
             .Should().Be(new RomanianAddress("RO-B", "SECTOR6"));
     }
 
@@ -112,17 +112,46 @@ public class RomanianAddressConverterTests
         RomanianAddressConverter.TryToCountyCode("RO-ZZ", out _).Should().BeFalse();
     }
 
+    [Fact]
+    public void TryToCountyCode_LoneSurrogate_ReturnsFalse()
+    {
+        // string.Normalize throws on invalid UTF-16; the Try form reports "not recognized" instead.
+        RomanianAddressConverter.TryToCountyCode("Cluj\uD800", out string code).Should().BeFalse();
+        code.Should().BeEmpty();
+        RomanianAddressConverter.TryToCountyCode("\uDC00", out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public void ToCountyCode_LoneSurrogate_ThrowsArgumentException()
+    {
+        Action act = () => RomanianAddressConverter.ToCountyCode("Cluj\uD800");
+
+        act.Should().Throw<ArgumentException>()
+            .WithMessage("[BR-RO-110] Unknown Romanian county*")
+            .Which.ParamName.Should().Be("county");
+    }
+
+    [Fact]
+    public void ToBucharestSector_LoneSurrogate_ThrowsArgumentException()
+    {
+        Action act = () => RomanianAddressConverter.ToBucharestSector("Sector 3\uD800");
+
+        act.Should().Throw<ArgumentException>()
+            .WithMessage("[BR-RO-100]*")
+            .Which.ParamName.Should().Be("city");
+    }
+
     [Theory]
-    [InlineData("Caraș-Severin", "RO-CS")]
-    [InlineData("Caraş-Severin", "RO-CS")]
+    [InlineData("Cara\u0219-Severin", "RO-CS")]
+    [InlineData("Cara\u015F-Severin", "RO-CS")]
     [InlineData("Caras Severin", "RO-CS")]
     [InlineData("CARAS-SEVERIN", "RO-CS")]
-    [InlineData("Bistrița-Năsăud", "RO-BN")]
-    [InlineData("Bistriţa-Năsăud", "RO-BN")]
+    [InlineData("Bistri\u021Ba-N\u0103s\u0103ud", "RO-BN")]
+    [InlineData("Bistri\u0163a-N\u0103s\u0103ud", "RO-BN")]
     [InlineData("bistrita nasaud", "RO-BN")]
     [InlineData("Satu Mare", "RO-SM")]
     [InlineData("Satu-Mare", "RO-SM")]
-    [InlineData("Vâlcea", "RO-VL")]
+    [InlineData("V\u00E2lcea", "RO-VL")]
     public void ToCountyCode_DiacriticCaseAndHyphenVariants_ReturnsIsoCode(string county, string expected)
     {
         RomanianAddressConverter.ToCountyCode(county).Should().Be(expected);

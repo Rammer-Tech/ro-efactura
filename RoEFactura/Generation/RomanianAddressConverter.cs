@@ -132,7 +132,12 @@ public static class RomanianAddressConverter
             return false;
         }
 
-        string key = StripCountyPrefix(Normalize(county));
+        if (Normalize(county) is not { } normalized)
+        {
+            return false;
+        }
+
+        string key = StripCountyPrefix(normalized);
 
         if (CountyCodeByName.TryGetValue(key, out string? byName))
         {
@@ -221,7 +226,10 @@ public static class RomanianAddressConverter
             return false;
         }
 
-        string key = Normalize(city);
+        if (Normalize(city) is not { } key)
+        {
+            return false;
+        }
 
         Match exact = ExactSectorPattern.Match(key);
         Match match = exact.Success ? exact : EmbeddedSectorPattern.Match(key);
@@ -239,11 +247,22 @@ public static class RomanianAddressConverter
 
     /// <summary>
     /// Trim, NFD then drop non-spacing marks (ș/ş/ț/ţ/ă/â/î), lower-case (invariant), dashes as spaces,
-    /// whitespace runs collapsed to one space.
+    /// whitespace runs collapsed to one space. Returns <c>null</c> when the value is not valid Unicode
+    /// (e.g. a lone surrogate), which names no county or sector.
     /// </summary>
-    private static string Normalize(string value)
+    private static string? Normalize(string value)
     {
-        string decomposed = value.Trim().Normalize(NormalizationForm.FormD);
+        string decomposed;
+        try
+        {
+            decomposed = value.Trim().Normalize(NormalizationForm.FormD);
+        }
+        catch (ArgumentException)
+        {
+            // string.Normalize rejects invalid code points: lone surrogates and, on ICU, U+FFFE.
+            return null;
+        }
+
         StringBuilder builder = new(decomposed.Length);
         foreach (char c in decomposed)
         {

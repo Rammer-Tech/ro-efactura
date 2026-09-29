@@ -486,6 +486,29 @@ public class EInvoiceDocumentGuardTests
     }
 
     [Fact]
+    public void Generate_LoneSurrogateInCounty_ThrowsArgumentException()
+    {
+        // Invalid UTF-16 in the county is reported as an unknown county, not an unlabeled Normalize failure.
+        EInvoiceDocument buyerCounty = WithBuyerAddress(ValidDocument(), address => address with { County = "Cluj\uD800" });
+
+        ArgumentException exception = AssertRejected(buyerCounty, "[BR-RO-111]");
+
+        exception.Message.Should().StartWith("[BR-RO-111] Buyer address: unknown Romanian county");
+        exception.ParamName.Should().Be("Buyer.Address.County");
+
+        EInvoiceDocument valid = ValidDocument();
+        EInvoiceDocument sellerCounty = valid with
+        {
+            Seller = valid.Seller with { Address = valid.Seller.Address with { County = "\uDC00" } }
+        };
+
+        ArgumentException sellerException = AssertRejected(sellerCounty, "[BR-RO-110]");
+
+        sellerException.Message.Should().StartWith("[BR-RO-110] Seller address: unknown Romanian county");
+        sellerException.ParamName.Should().Be("Seller.Address.County");
+    }
+
+    [Fact]
     public void Generate_QuantityTimesUnitPriceOverflow_ThrowsArgumentException()
     {
         // 1e20 x 1e10 = 1e30 > decimal.MaxValue (about 7.9e28).
@@ -535,10 +558,10 @@ public class EInvoiceDocumentGuardTests
     public void Generate_ItemNameNoBreakSpaceRun_CountedLikeNormalizeSpace()
     {
         // normalize-space collapses only [ \t\r\n]; U+00A0 counts one by one.
-        string overLimit = "A" + new string(' ', 99) + "B";
+        string overLimit = "A" + new string('\u00A0', 99) + "B";
         AssertRejected(WithFirstLine(ValidDocument(), line => line with { Name = overLimit }), "[BR-RO-L1024]");
 
-        string atLimit = "A" + new string(' ', 98) + "B";
+        string atLimit = "A" + new string('\u00A0', 98) + "B";
         GeneratedXml atLimitXml = GeneratedXml.From(WithFirstLine(ValidDocument(), line => line with { Name = atLimit }));
         atLimitXml.Value("/inv:Invoice/cac:InvoiceLine[cbc:ID='1']/cac:Item/cbc:Name").Should().Be(atLimit);
 
