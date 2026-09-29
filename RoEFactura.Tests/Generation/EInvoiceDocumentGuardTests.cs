@@ -1,4 +1,5 @@
 using FluentAssertions;
+using FluentValidation.Results;
 using RoEFactura.Generation;
 using RoEFactura.Tests.Generation.TestData;
 using Xunit;
@@ -405,5 +406,159 @@ public class EInvoiceDocumentGuardTests
         EInvoiceDocument document = WithFirstLine(ValidDocument(), line => line with { Name = " " });
 
         AssertRejected(document, "[BR-25]");
+    }
+
+    [Fact]
+    public void Generate_NonVatPayerSellerRoBuyerWithVatIdOnly_EmitsCuiAsLegalId()
+    {
+        EInvoiceDocument nonPayer = EInvoiceTestCases.NonVatPayerSeller();
+        EInvoiceDocument document = nonPayer with
+        {
+            Buyer = nonPayer.Buyer with { LegalRegistrationId = null, VatId = EInvoiceTestCases.BuyerVatId }
+        };
+
+        GeneratedXml xml = GeneratedXml.From(document);
+
+        // BR-O-02 omits BT-48; the CUI digits of the RO VatId become BT-47 so ANAF can identify the buyer.
+        string buyer = "/inv:Invoice/cac:AccountingCustomerParty/cac:Party";
+        xml.Value($"{buyer}/cac:PartyLegalEntity/cbc:CompanyID").Should().Be(EInvoiceTestCases.BuyerCui);
+        xml.Elements($"{buyer}/cac:PartyTaxScheme").Should().BeEmpty();
+        xml.Text.Should().NotContain(EInvoiceTestCases.BuyerVatId);
+        ValidationResult result = xml.ValidateLocally();
+        result.Errors.Should().BeEmpty(string.Join(", ", result.Errors.Select(e => $"{e.ErrorCode}: {e.ErrorMessage}")));
+        result.IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Generate_NonVatPayerSellerForeignBuyerWithVatIdOnly_ThrowsArgumentException()
+    {
+        EInvoiceDocument document = EInvoiceTestCases.NonVatPayerSeller() with
+        {
+            Buyer = EInvoiceTestCases.ForeignBuyer().Buyer with { LegalRegistrationId = null }
+        };
+
+        ArgumentException exception = AssertRejected(document, "[BR-RO-120]");
+
+        exception.Message.Should().Contain("BR-O-02").And.Contain("LegalRegistrationId").And.Contain(EInvoiceTestCases.ForeignBuyerVatId);
+        exception.ParamName.Should().Be("Buyer.LegalRegistrationId");
+    }
+
+    [Fact]
+    public void Generate_NonVatPayerSellerCompanyBuyerWithoutIds_ThrowsArgumentException()
+    {
+        EInvoiceDocument nonPayer = EInvoiceTestCases.NonVatPayerSeller();
+        EInvoiceDocument document = nonPayer with
+        {
+            Buyer = nonPayer.Buyer with { LegalRegistrationId = " ", VatId = null }
+        };
+
+        ArgumentException exception = AssertRejected(document, "[BR-RO-120]");
+
+        exception.Message.Should().Contain("BR-O-02").And.Contain("no VatId was given");
+        exception.ParamName.Should().Be("Buyer.LegalRegistrationId");
+    }
+
+    [Fact]
+    public void Generate_ControlCharacterInLineName_ThrowsArgumentException()
+    {
+        EInvoiceDocument document = WithFirstLine(ValidDocument(), line => line with { Name = "Servicii\u000Bdezvoltare" });
+
+        ArgumentException exception = AssertRejected(document, "[BT-153]");
+
+        exception.Message.Should().Contain("contains U+000B, not allowed in XML 1.0");
+        exception.ParamName.Should().Be("Lines[0].Name");
+
+        // A lone surrogate is not an XML character either.
+        EInvoiceDocument loneSurrogate = WithFirstLine(ValidDocument(), line => line with { Name = "Servicii \uD800 software" });
+        AssertRejected(loneSurrogate, "[BT-153]").Message.Should().Contain("U+D800");
+    }
+
+    [Fact]
+    public void Generate_SupplementaryCharacterInLineName_IsEmitted()
+    {
+        // U+1D11E (musical symbol G clef) is a valid surrogate pair in XML 1.0.
+        string name = "Partitura \U0001D11E";
+        EInvoiceDocument document = WithFirstLine(ValidDocument(), line => line with { Name = name });
+
+        GeneratedXml xml = GeneratedXml.From(document);
+
+        xml.Value("/inv:Invoice/cac:InvoiceLine[cbc:ID='1']/cac:Item/cbc:Name").Should().Be(name);
+    }
+
+    [Fact]
+    public void Generate_QuantityTimesUnitPriceOverflow_ThrowsArgumentException()
+    {
+        // 1e20 x 1e10 = 1e30 > decimal.MaxValue (about 7.9e28).
+        EInvoiceDocument document = WithFirstLine(ValidDocument(),
+            line => line with { Quantity = 100000000000000000000m, UnitPrice = 10000000000m });
+
+        ArgumentException exception = AssertRejected(document, "[BT-131]");
+
+        exception.Message.Should().Contain("System.Decimal range").And.Contain("line 1");
+        exception.ParamName.Should().Be("Lines[0]");
+        exception.InnerException.Should().BeOfType<OverflowException>();
+    }
+
+    [Fact]
+    public void Generate_TotalsOverflow_ThrowsArgumentException()
+    {
+        // The line net fits (5e28), but its 21 % VAT does not.
+        EInvoiceDocument document = WithFirstLine(ValidDocument(),
+            line => line with { Quantity = 1m, UnitPrice = 50000000000000000000000000000m });
+
+        ArgumentException exception = AssertRejected(document, "[BT-106]");
+
+        exception.ParamName.Should().Be("Lines");
+        exception.InnerException.Should().BeOfType<OverflowException>();
+    }
+
+    [Fact]
+    public void Generate_TrailingZeroScale_AcceptedAndEmittedByValue()
+    {
+        // N-d: the decimal guards compare values, not scale.
+        EInvoiceDocument document = WithFirstLine(ValidDocument(),
+            line => line with { Quantity = 1.20000m, UnitPrice = 12.30000m, VatRate = 21.000m });
+
+        GeneratedXml xml = GeneratedXml.From(document);
+
+        string line = "/inv:Invoice/cac:InvoiceLine[cbc:ID='1']";
+        xml.Value($"{line}/cbc:InvoicedQuantity").Should().Be("1.2");
+        xml.Value($"{line}/cac:Price/cbc:PriceAmount").Should().Be("12.30");
+        xml.Value($"{line}/cac:Item/cac:ClassifiedTaxCategory/cbc:Percent").Should().Be("21");
+        xml.Value($"{line}/cbc:LineExtensionAmount").Should().Be("14.76");
+        // 21.000 and line 2's 21 form one S group.
+        xml.Elements("/inv:Invoice/cac:TaxTotal/cac:TaxSubtotal").Should().ContainSingle();
+        xml.Value("/inv:Invoice/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory/cbc:Percent").Should().Be("21");
+    }
+
+    [Fact]
+    public void Generate_ItemNameNoBreakSpaceRun_CountedLikeNormalizeSpace()
+    {
+        // normalize-space collapses only [ \t\r\n]; U+00A0 counts one by one.
+        string overLimit = "A" + new string(' ', 99) + "B";
+        AssertRejected(WithFirstLine(ValidDocument(), line => line with { Name = overLimit }), "[BR-RO-L1024]");
+
+        string atLimit = "A" + new string(' ', 98) + "B";
+        GeneratedXml atLimitXml = GeneratedXml.From(WithFirstLine(ValidDocument(), line => line with { Name = atLimit }));
+        atLimitXml.Value("/inv:Invoice/cac:InvoiceLine[cbc:ID='1']/cac:Item/cbc:Name").Should().Be(atLimit);
+
+        // A run of ASCII spaces still collapses to one character.
+        string spaceRun = "A" + new string(' ', 99) + "B";
+        GeneratedXml spaceRunXml = GeneratedXml.From(WithFirstLine(ValidDocument(), line => line with { Name = spaceRun }));
+        spaceRunXml.Value("/inv:Invoice/cac:InvoiceLine[cbc:ID='1']/cac:Item/cbc:Name").Should().Be(spaceRun);
+    }
+
+    [Fact]
+    public void Generate_LowercaseRoBuyerVatId_EmittedUpperCase()
+    {
+        EInvoiceDocument document = ValidDocument() with
+        {
+            Buyer = ValidDocument().Buyer with { VatId = " ro876543213 " }
+        };
+
+        GeneratedXml xml = GeneratedXml.From(document);
+
+        xml.Value("/inv:Invoice/cac:AccountingCustomerParty/cac:Party/cac:PartyTaxScheme[cac:TaxScheme/cbc:ID='VAT']/cbc:CompanyID")
+            .Should().Be("RO876543213");
     }
 }

@@ -32,8 +32,10 @@ public sealed record EInvoiceBuyer
 
     /// <summary>
     /// Buyer VAT identifier (BT-48), prefixed with a country code from the BR-CO-09 list (e.g. <c>RO</c>,
-    /// <c>DE</c>, <c>EL</c>). Omitted on NotSubject (O) invoices, where BR-O-02 forbids it; BT-47 is still
-    /// emitted when present.
+    /// <c>DE</c>, <c>EL</c>); emitted trimmed and upper-cased. Omitted on NotSubject (O) invoices, where BR-O-02
+    /// forbids it: there a company buyer without <see cref="LegalRegistrationId"/> gets the CUI digits of an
+    /// <c>RO</c> VatId as BT-47, and any other VatId leaves it without an identifier, which the generator
+    /// rejects with <c>[BR-RO-120]</c> — pass <see cref="LegalRegistrationId"/> in that case.
     /// </summary>
     public string? VatId { get; init; }
 }

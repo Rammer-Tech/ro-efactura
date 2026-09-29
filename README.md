@@ -299,6 +299,10 @@ byte[] xml = generator.Generate(document); // IEInvoiceXmlGenerator from DI
 var anafCheck = await invoices.ValidateWithAnafAsync(xml, AnafDocumentStandard.Ubl);
 ```
 
+Note: when the seller is not a VAT payer (`IsVatPayer = false`, `NotSubject` lines), BR-O-02 omits the
+buyer's `VatId` (BT-48). A company buyer with an `RO` VatId then gets its CUI digits as BT-47; any other
+company buyer needs `LegalRegistrationId`, otherwise `Generate` throws `[BR-RO-120]`.
+
 v1 supports RON only and VAT categories S, E and O. See [docs/XML_GENERATION.md](docs/XML_GENERATION.md)
 for one example per case (B2B, natural person without CNP, foreign buyer, non-VAT-payer seller,
 mixed 21%/11%/exempt, storno), the category rules, the address conversion table and every exception.

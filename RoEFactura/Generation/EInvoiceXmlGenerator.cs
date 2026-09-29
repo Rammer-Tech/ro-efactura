@@ -121,14 +121,17 @@ public sealed class EInvoiceXmlGenerator : IEInvoiceXmlGenerator
     {
         EInvoiceBuyer buyer = document.Buyer;
         ResolvedAddress address = EInvoiceDocumentGuard.ResolvePostalAddress(buyer.Address, PartyRole.Buyer);
-        string? legalId = EInvoiceDocumentGuard.BuyerLegalId(buyer);
+        string? legalId = EInvoiceDocumentGuard.BuyerLegalId(document);
 
         return CacElement("AccountingCustomerParty",
             CacElement("Party",
                 BuildPostalAddress(address),
-                // BT-48 (BR-CO-09, BR-RO-120); omitted on NotSubject invoices (BR-O-02).
-                EInvoiceDocumentGuard.EmitsBuyerVatId(document) ? BuildVatPartyTaxScheme(buyer.VatId!.Trim()) : null,
-                // BT-44 (BR-07, BR-RO-L203), BT-47 (BR-RO-120; 13 zeros for a natural person without CNP).
+                // BT-48 trimmed and upper-cased (BR-CO-09, BR-RO-120); omitted on NotSubject invoices (BR-O-02).
+                EInvoiceDocumentGuard.EmitsBuyerVatId(document)
+                    ? BuildVatPartyTaxScheme(EInvoiceDocumentGuard.NormalizeVatId(buyer.VatId!))
+                    : null,
+                // BT-44 (BR-07, BR-RO-L203), BT-47 (BR-RO-120; 13 zeros for a natural person without CNP;
+                // the CUI digits of an RO VatId when BR-O-02 omits BT-48).
                 CacElement("PartyLegalEntity",
                     CbcElement("RegistrationName", buyer.Name.Trim()),
                     legalId is null ? null : CbcElement("CompanyID", legalId))));

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using System.Xml.Linq;
 using FluentAssertions;
@@ -293,5 +294,35 @@ public class EInvoiceXmlGeneratorTests
     {
         EInvoiceTestCases.MixedRatesExemptionReason.Length.Should().BeInRange(120, 150);
         EInvoiceTestCases.MixedRates().VatExemption!.Reason.Should().Be(EInvoiceTestCases.MixedRatesExemptionReason);
+    }
+
+    [Fact]
+    public void Generate_MixedRatesUnderRomanianCulture_EmitsInvariantNumbers()
+    {
+        CultureInfo originalCulture = CultureInfo.CurrentCulture;
+        CultureInfo originalUiCulture = CultureInfo.CurrentUICulture;
+        GeneratedXml xml;
+        try
+        {
+            CultureInfo romanian = new("ro-RO");
+            CultureInfo.CurrentCulture = romanian;
+            CultureInfo.CurrentUICulture = romanian;
+            CultureInfo.CurrentCulture.NumberFormat.NumberDecimalSeparator.Should().Be(",");
+
+            xml = GeneratedXml.From(EInvoiceTestCases.MixedRates());
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = originalCulture;
+            CultureInfo.CurrentUICulture = originalUiCulture;
+        }
+
+        // Checked on the raw text: parsing the values back would hide a culture-formatted number.
+        xml.Text.Should().Contain("<cbc:PriceAmount currencyID=\"RON\">12.3456</cbc:PriceAmount>");
+        xml.Text.Should().Contain(">1.235</cbc:InvoicedQuantity>");
+        xml.Text.Should().Contain("<cbc:PayableAmount currencyID=\"RON\">879.93</cbc:PayableAmount>");
+        xml.Text.Should().Contain("<cbc:TaxAmount currencyID=\"RON\">64.68</cbc:TaxAmount>");
+        xml.Text.Should().Contain("<cbc:IssueDate>2026-09-15</cbc:IssueDate>");
+        xml.Text.Should().NotContain("12,3456").And.NotContain("1,235").And.NotContain("879,93");
     }
 }

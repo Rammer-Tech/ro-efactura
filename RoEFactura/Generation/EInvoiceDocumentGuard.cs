@@ -1,16 +1,18 @@
 using System.Globalization;
 using System.Numerics;
 using System.Text.RegularExpressions;
+using System.Xml;
 using RoEFactura.Validation.Constants;
 
 namespace RoEFactura.Generation;
 
 /// <summary>
 /// Validates an <see cref="EInvoiceDocument"/> before any XML is built. Every violation throws an
-/// <see cref="ArgumentException"/> whose English message starts with the official rule id in brackets
-/// (the schematron assert id, e.g. <c>[BR-RO-L0502]</c>) and whose <c>ParamName</c> names the offending
-/// member. Only a null document throws <see cref="ArgumentNullException"/>. Also hosts the normalization
-/// helpers the builder uses, so the guard and the emitted XML always agree.
+/// <see cref="ArgumentException"/> whose English message starts with an id in brackets — the official
+/// schematron assert id (e.g. <c>[BR-RO-L0502]</c>), or the business term id (e.g. <c>[BT-153]</c>) or
+/// decision id when no official rule applies — and whose <c>ParamName</c> names the offending member.
+/// Only a null document throws <see cref="ArgumentNullException"/>. Also hosts the normalization helpers
+/// the builder uses, so the guard and the emitted XML always agree.
 /// </summary>
 internal static class EInvoiceDocumentGuard
 {
@@ -34,7 +36,9 @@ internal static class EInvoiceDocumentGuard
     private const int MaxPriceDecimals = 4;              // BT-146 (micro-taxe E4 parity)
     private const int MaxRateDecimals = 2;               // BT-152
 
-    private static readonly Regex WhitespaceRun = new(@"\s+", RegexOptions.CultureInvariant);
+    /// <summary>XPath 1.0 whitespace (<c>S</c> production of XML 1.0): space, tab, CR, LF — nothing else.</summary>
+    private static readonly char[] XmlWhitespace = [' ', '\t', '\r', '\n'];
+    private static readonly Regex XmlWhitespaceRun = new("[ \t\r\n]+", RegexOptions.CultureInvariant);
     private static readonly Regex Digit = new("[0-9]", RegexOptions.CultureInvariant);
 
     /// <summary>Throws on the first rule the document breaks.</summary>
@@ -50,6 +54,7 @@ internal static class EInvoiceDocumentGuard
         ValidateBuyer(document);
         ValidateExemption(document);
         ValidatePayment(document);
+        ValidateXmlCharacters(document);
     }
 
     private static void ValidateHeader(EInvoiceDocument document)
@@ -237,6 +242,12 @@ internal static class EInvoiceDocumentGuard
                 throw Error("BT-146", $"PriceAmount (BT-146) must have at most {MaxPriceDecimals} decimals; got {Invariant(line.UnitPrice)} (line {number}).", $"{path}.UnitPrice");
             }
 
+            // BT-131 = BT-129 x BT-146 must fit System.Decimal (decimal arithmetic throws OverflowException).
+            if (!FitsDecimalProduct(line.Quantity, line.UnitPrice, out OverflowException? overflow))
+            {
+                throw Error("BT-131", $"Line net amount (BT-131) = quantity (BT-129) {Invariant(line.Quantity)} x unit price (BT-146) {Invariant(line.UnitPrice)} is outside the System.Decimal range (line {number}).", path, overflow);
+            }
+
             // BR-23: the unit of measure (BT-130) is mandatory.
             if (string.IsNullOrWhiteSpace(line.UnitCode))
             {
@@ -344,24 +355,36 @@ internal static class EInvoiceDocumentGuard
 
         ResolvePostalAddress(buyer.Address, PartyRole.Buyer);
 
-        // BR-CO-09: a VAT identifier starts with a prefix from the official list (checked when it is emitted;
-        // on NotSubject invoices BR-O-02 omits BT-48).
-        if (EmitsBuyerVatId(document) && !OfficialCodeLists.VatIdPrefixes.Contains(VatIdPrefix(buyer.VatId!)))
+        bool emitsVatId = EmitsBuyerVatId(document);
+
+        // BR-CO-09: a VAT identifier starts with a prefix from the official list (checked on the trimmed,
+        // upper-cased value that is emitted; on NotSubject invoices BR-O-02 omits BT-48).
+        if (emitsVatId && !OfficialCodeLists.VatIdPrefixes.Contains(VatIdPrefix(NormalizeVatId(buyer.VatId!))))
         {
             throw Error("BR-CO-09", $"Buyer VAT identifier (BT-48) must start with a country prefix from the BR-CO-09 list (e.g. RO, DE, EL); got '{buyer.VatId}'.", "Buyer.VatId");
+        }
+
+        if (buyer.IsNaturalPerson || emitsVatId || BuyerLegalId(document) is not null)
+        {
+            return;
         }
 
         // BR-RO-120 (RO16931-rules.sch:409-415): with any S/Z/E/AE/K/G/L/M line, BT-47 or BT-48 must be present,
         // for a buyer in any country. A natural person always gets BT-47 (the CNP or 13 zeros).
         bool anyStandardOrExempt = document.Lines.Any(line =>
             line.VatCategory is EInvoiceVatCategory.Standard or EInvoiceVatCategory.Exempt);
-        if (anyStandardOrExempt
-            && !buyer.IsNaturalPerson
-            && string.IsNullOrWhiteSpace(buyer.VatId)
-            && string.IsNullOrWhiteSpace(buyer.LegalRegistrationId))
+        if (anyStandardOrExempt)
         {
             throw Error("BR-RO-120", "The buyer must have a VAT identifier (BT-48) or a legal registration identifier (BT-47).", "Buyer");
         }
+
+        // NotSubject (O) invoice: BR-O-02 omits BT-48, and only an RO VatId can stand in as BT-47 (its CUI
+        // digits). Without an emitted identifier ANAF cannot identify the buyer (ERRIdentif), so BR-RO-120's
+        // "BT-47 or BT-48" requirement is applied here as well.
+        string given = string.IsNullOrWhiteSpace(buyer.VatId)
+            ? "no VatId was given"
+            : $"VatId '{buyer.VatId}' is not RO followed by 2-10 digits";
+        throw Error("BR-RO-120", $"The buyer has no identifier to emit: BT-48 (VatId) is omitted on NotSubject (O) invoices (BR-O-02), and only an RO VatId is converted to BT-47 (its CUI digits); {given}. Pass the buyer's legal registration identifier (LegalRegistrationId, BT-47).", "Buyer.LegalRegistrationId");
     }
 
     private static void ValidateExemption(EInvoiceDocument document)
@@ -412,10 +435,116 @@ internal static class EInvoiceDocumentGuard
         }
 
         // BR-CO-25: a positive amount due (BT-115) requires a due date (BT-9) or payment terms (BT-20).
-        EInvoiceTotals totals = EInvoiceTotalsCalculator.Calculate(document);
+        EInvoiceTotals totals = CalculateTotals(document);
         if (totals.PayableAmount > 0m && document.DueDate is null && string.IsNullOrWhiteSpace(document.PaymentTerms))
         {
             throw Error("BR-CO-25", "A positive amount due (BT-115) requires a due date (BT-9) or payment terms (BT-20).", "DueDate");
+        }
+    }
+
+    /// <summary>
+    /// Computes the totals; an <see cref="OverflowException"/> of the sums (BT-106, BT-110, BT-112, BT-115) or
+    /// of a group's VAT (BT-117) becomes a labeled <see cref="ArgumentException"/>.
+    /// </summary>
+    private static EInvoiceTotals CalculateTotals(EInvoiceDocument document)
+    {
+        try
+        {
+            return EInvoiceTotalsCalculator.Calculate(document);
+        }
+        catch (OverflowException exception)
+        {
+            throw Error("BT-106", "The invoice totals (BT-106 line sum, BT-117/BT-110 VAT, BT-112/BT-115 totals) are outside the System.Decimal range.", "Lines", exception);
+        }
+    }
+
+    /// <summary>
+    /// Every text the builder emits must consist of XML 1.0 characters (<c>Char</c> production: no C0 controls
+    /// other than tab/CR/LF, no U+FFFE/U+FFFF, no lone surrogates); otherwise the XML writer would fail without
+    /// a rule id. Checks the emitted (trimmed) form; values reduced to digits, ISO codes or list codes are safe.
+    /// </summary>
+    private static void ValidateXmlCharacters(EInvoiceDocument document)
+    {
+        CheckXmlText(document.Number, "BT-1", "Invoice number (BT-1)", "Number");
+
+        IReadOnlyList<string> notes = document.Notes ?? [];
+        for (int i = 0; i < notes.Count; i++)
+        {
+            CheckXmlText(notes[i], "BT-22", $"Invoice note {i + 1} (BT-22)", $"Notes[{i}]");
+        }
+
+        CheckXmlText(document.PaymentTerms, "BT-20", "Payment terms (BT-20)", "PaymentTerms");
+        CheckXmlText(document.BillingReference?.Number, "BT-25", "Preceding invoice number (BT-25)", "BillingReference.Number");
+
+        EInvoiceSeller seller = document.Seller;
+        CheckXmlText(seller.Name, "BT-27", "Seller name (BT-27)", "Seller.Name");
+        CheckXmlText(seller.TradeRegisterNumber, "BT-33", "Seller trade register number (BT-33)", "Seller.TradeRegisterNumber");
+        CheckXmlAddress(seller.Address, PartyRole.Seller);
+
+        EInvoiceBuyer buyer = document.Buyer;
+        CheckXmlText(buyer.Name, "BT-44", "Buyer name (BT-44)", "Buyer.Name");
+        CheckXmlText(buyer.LegalRegistrationId, "BT-47", "Buyer legal registration identifier (BT-47)", "Buyer.LegalRegistrationId");
+        if (EmitsBuyerVatId(document))
+        {
+            CheckXmlText(buyer.VatId, "BT-48", "Buyer VAT identifier (BT-48)", "Buyer.VatId");
+        }
+
+        CheckXmlAddress(buyer.Address, PartyRole.Buyer);
+
+        if (document.VatExemption is { } exemption
+            && document.Lines.Any(line => line.VatCategory == EInvoiceVatCategory.Exempt))
+        {
+            CheckXmlText(exemption.ReasonCode, "BT-121", "VAT exemption reason code (BT-121)", "VatExemption.ReasonCode");
+            CheckXmlText(exemption.Reason, "BT-120", "VAT exemption reason text (BT-120)", "VatExemption.Reason");
+        }
+
+        for (int i = 0; i < document.Lines.Count; i++)
+        {
+            EInvoiceLine line = document.Lines[i];
+            string path = $"Lines[{i}]";
+            CheckXmlText(line.Note, "BT-127", $"Invoice line note (BT-127) of line {i + 1}", $"{path}.Note");
+            CheckXmlText(line.Name, "BT-153", $"Item name (BT-153) of line {i + 1}", $"{path}.Name");
+            CheckXmlText(line.Description, "BT-154", $"Item description (BT-154) of line {i + 1}", $"{path}.Description");
+        }
+    }
+
+    private static void CheckXmlAddress(EInvoiceAddress address, PartyRole role)
+    {
+        bool seller = role == PartyRole.Seller;
+        string prefix = seller ? "Seller.Address" : "Buyer.Address";
+        string party = seller ? "Seller" : "Buyer";
+        ResolvedAddress resolved = ResolvePostalAddress(address, role);
+
+        CheckXmlText(resolved.Street, seller ? "BT-35" : "BT-50", $"{party} street ({(seller ? "BT-35" : "BT-50")})", $"{prefix}.Street");
+        CheckXmlText(resolved.City, seller ? "BT-37" : "BT-52", $"{party} city ({(seller ? "BT-37" : "BT-52")})", $"{prefix}.City");
+        CheckXmlText(resolved.PostalCode, seller ? "BT-38" : "BT-53", $"{party} post code ({(seller ? "BT-38" : "BT-53")})", $"{prefix}.PostalCode");
+    }
+
+    /// <summary>Throws <c>[termId] … contains U+XXXX, not allowed in XML 1.0</c> for the first non-XML character.</summary>
+    private static void CheckXmlText(string? value, string termId, string label, string paramName)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return;
+        }
+
+        string emitted = value.Trim();
+        for (int i = 0; i < emitted.Length; i++)
+        {
+            char c = emitted[i];
+            if (XmlConvert.IsXmlChar(c))
+            {
+                continue;
+            }
+
+            // A supplementary-plane character is a high surrogate followed by a low surrogate.
+            if (i + 1 < emitted.Length && XmlConvert.IsXmlSurrogatePair(lowChar: emitted[i + 1], highChar: c))
+            {
+                i++;
+                continue;
+            }
+
+            throw Error(termId, $"{label} contains U+{(int)c:X4}, not allowed in XML 1.0.", paramName);
         }
     }
 
@@ -516,18 +645,39 @@ internal static class EInvoiceDocumentGuard
         return !string.IsNullOrWhiteSpace(document.Buyer.VatId) && document.Seller.IsVatPayer;
     }
 
-    /// <summary>BT-47: the given id, or the 13-zero identifier for a natural person without a CNP.</summary>
-    internal static string? BuyerLegalId(EInvoiceBuyer buyer)
+    /// <summary>
+    /// BT-47: the given id; else, for a company buyer whose BT-48 is not emitted (NotSubject invoice, BR-O-02),
+    /// the CUI digits of an <c>RO</c> VatId; else the 13-zero identifier for a natural person without a CNP.
+    /// </summary>
+    internal static string? BuyerLegalId(EInvoiceDocument document)
     {
+        EInvoiceBuyer buyer = document.Buyer;
         if (!string.IsNullOrWhiteSpace(buyer.LegalRegistrationId))
         {
             return buyer.LegalRegistrationId.Trim();
         }
 
+        if (!buyer.IsNaturalPerson
+            && !EmitsBuyerVatId(document)
+            && !string.IsNullOrWhiteSpace(buyer.VatId)
+            && NormalizeVatId(buyer.VatId).StartsWith(RomaniaCountryCode, StringComparison.Ordinal))
+        {
+            return NormalizeCui(buyer.VatId);
+        }
+
         return buyer.IsNaturalPerson ? EInvoiceBuyer.NaturalPersonWithoutCnpId : null;
     }
 
-    /// <summary>Strips whitespace and a leading RO prefix; returns the 2-10 digit CUI, or null when invalid.</summary>
+    /// <summary>BT-48 as emitted and checked by BR-CO-09: trimmed and upper-cased (<c>ro123</c> → <c>RO123</c>).</summary>
+    internal static string NormalizeVatId(string vatId)
+    {
+        return vatId.Trim().ToUpperInvariant();
+    }
+
+    /// <summary>
+    /// Strips whitespace, upper-cases (as <see cref="NormalizeVatId"/>) and drops a leading RO prefix; returns
+    /// the 2-10 digit CUI, or null when invalid.
+    /// </summary>
     internal static string? NormalizeCui(string? cui)
     {
         if (string.IsNullOrWhiteSpace(cui))
@@ -535,8 +685,8 @@ internal static class EInvoiceDocumentGuard
             return null;
         }
 
-        string compact = string.Concat(cui.Where(c => !char.IsWhiteSpace(c)));
-        if (compact.StartsWith(RomaniaCountryCode, StringComparison.OrdinalIgnoreCase))
+        string compact = string.Concat(cui.Where(c => !char.IsWhiteSpace(c))).ToUpperInvariant();
+        if (compact.StartsWith(RomaniaCountryCode, StringComparison.Ordinal))
         {
             compact = compact[2..];
         }
@@ -591,10 +741,37 @@ internal static class EInvoiceDocumentGuard
         return decimal.Round(value, decimals) == value;
     }
 
-    /// <summary>Mirrors the schematron's <c>string-length(normalize-space(.))</c>.</summary>
+    /// <summary>False when <paramref name="left"/> x <paramref name="right"/> overflows System.Decimal.</summary>
+    private static bool FitsDecimalProduct(decimal left, decimal right, out OverflowException? overflow)
+    {
+        try
+        {
+            _ = left * right;
+            overflow = null;
+            return true;
+        }
+        catch (OverflowException exception)
+        {
+            overflow = exception;
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Mirrors the schematron's <c>string-length(normalize-space(.))</c> on the value as emitted. The builder
+    /// emits <c>value.Trim()</c> (.NET trims every Unicode white space); XPath <c>normalize-space</c> then trims
+    /// and collapses only XML white space (<c>[ \t\r\n]+</c>), so a no-break space (U+00A0) or any other
+    /// Unicode space inside the value is counted character by character.
+    /// </summary>
     private static int NormalizedLength(string? value)
     {
-        return string.IsNullOrEmpty(value) ? 0 : WhitespaceRun.Replace(value.Trim(), " ").Length;
+        return string.IsNullOrEmpty(value) ? 0 : NormalizeSpace(value.Trim()).Length;
+    }
+
+    /// <summary>XPath 1.0 <c>normalize-space</c>: trims and collapses runs of space, tab, CR and LF only.</summary>
+    private static string NormalizeSpace(string value)
+    {
+        return XmlWhitespaceRun.Replace(value.Trim(XmlWhitespace), " ");
     }
 
     private static string Invariant(decimal value)
@@ -602,9 +779,9 @@ internal static class EInvoiceDocumentGuard
         return value.ToString(CultureInfo.InvariantCulture);
     }
 
-    private static ArgumentException Error(string ruleId, string message, string paramName)
+    private static ArgumentException Error(string ruleId, string message, string paramName, Exception? innerException = null)
     {
-        return new ArgumentException($"[{ruleId}] {message}", paramName);
+        return new ArgumentException($"[{ruleId}] {message}", paramName, innerException);
     }
 }
 

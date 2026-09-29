@@ -284,25 +284,32 @@ var storno = new EInvoiceDocument
 | Seller | Allowed line categories | Rate (BT-152) | Emitted VAT ids | Breakdown reason |
 |---|---|---|---|---|
 | `IsVatPayer = true` | `Standard` (S), `Exempt` (E) | S: > 0, at most 2 decimals (BR-S-05); E: 0 (BR-E-05) | Seller BT-31 = `RO` + CUI; buyer BT-48 when `VatId` is set | S: none (BR-S-10); E: the document `VatExemption` (BR-E-10) |
-| `IsVatPayer = false` | `NotSubject` (O) only (BR-O-11/12) | not emitted (BR-O-05) | none — BR-O-02 forbids seller and buyer VAT ids | `VATEX-EU-O` + "Neplătitor de TVA" (BR-O-10) |
+| `IsVatPayer = false` | `NotSubject` (O) only (BR-O-11/12) | not emitted (BR-O-05) | none — BR-O-02 forbids seller and buyer VAT ids (an `RO` buyer `VatId` becomes BT-47, see below) | `VATEX-EU-O` + "Neplătitor de TVA" (BR-O-10) |
 
 Notes:
 
 - **BR-O-02 — buyer VAT id on O invoices.** On an invoice with NotSubject lines the buyer `VatId` is
-  omitted, because BR-O-02 forbids BT-48 there. BT-47 (`LegalRegistrationId`) is still emitted, so pass
-  the buyer's CUI as `LegalRegistrationId` when you have it. (The local `RoCiusUblValidator` checks
-  BR-RO-120 for every Romanian buyer regardless of the line categories, so an O invoice to a Romanian
-  company with neither id passes ANAF's rule but is flagged locally.)
+  omitted, because BR-O-02 forbids BT-48 there, so the buyer is identified by BT-47 alone. The generator
+  fills BT-47 in this order: the given `LegalRegistrationId`; else, for a company buyer whose `VatId` is
+  `RO` followed by 2-10 digits, the CUI digits of that VatId (`RO876543213` → `876543213`, so ANAF can
+  still identify the buyer); else `0000000000000` for a natural person. A company buyer left without an
+  identifier — no `LegalRegistrationId` and either no `VatId` or a non-`RO` one such as `DE123456789` — is
+  rejected with `[BR-RO-120]` (`ParamName` `Buyer.LegalRegistrationId`): pass the buyer's legal
+  registration id as `LegalRegistrationId` (for a foreign buyer without a Romanian CUI/NIF, see the
+  ERRIdentif note below). Every O invoice the generator accepts therefore carries a buyer identifier, and
+  it passes the local `RoCiusUblValidator`, whose BR-RO-120 check covers every Romanian buyer regardless
+  of the line categories.
 - **BR-E-01 — one exemption reason per document.** An invoice has exactly one Exempt breakdown (BR-E-01,
   and UBL-SR-32 allows one reason text), so `EInvoiceDocument.VatExemption` is a single value. A caller
   whose exempt lines carry different reasons (e.g. micro-taxe E4 lines) must pick one reason per document
   or refuse to issue; the model cannot express two.
 - **BR-RO-120 — buyer identifier.** Whenever a line is S or E, every buyer that is not a natural person —
   Romanian or foreign — needs `VatId` (BT-48) or `LegalRegistrationId` (BT-47); the generator throws
-  otherwise (RO16931-rules.sch:409-415). A natural person always gets BT-47. The local validator's
-  BR-RO-120 check only looks at Romanian buyers, so it does not catch a foreign company without ids —
-  a gap, which the generator's own guard closes; it is left unchanged. (Its only stricter case is the
-  O-invoice one described under BR-O-02 above.)
+  otherwise (RO16931-rules.sch:409-415). The official rule does not cover O invoices, but there BR-O-02
+  omits BT-48 and ANAF still has to identify the buyer (ERRIdentif below), so the generator also requires
+  an emitted BT-47 for a company buyer on an O invoice (see BR-O-02 above). A natural person always gets
+  BT-47. The local validator's BR-RO-120 check only looks at Romanian buyers, so it does not catch a
+  foreign company without ids — a gap, which the generator's own guard closes; it is left unchanged.
 - **ERRIdentif — foreign buyer identification.** This is not a CIUS-RO schematron rule. ANAF's validator
   (`validare/FACT1`) also identifies the buyer's Romanian CUI and fails with
   `codEroare=ERRIdentif; textEroare=nu a fost identificat cui cumparator` when it cannot find one. It
@@ -376,10 +383,14 @@ the sector in `EInvoiceAddress.City`. For a foreign address `County` is ignored.
 ## Errors
 
 `Generate` validates the whole document before building any XML. A null document throws
-`ArgumentNullException`; every other problem throws `ArgumentException` whose message starts with the
-official rule id in brackets (the schematron assert id — for length rules ANAF prints a shorter tag, e.g.
-assert `BR-RO-L0502` is shown as `[BR-RO-L050]`), and whose `ParamName` is the member path
-(e.g. `Lines[1].UnitPrice`).
+`ArgumentNullException`; every other problem — including a text with a character that XML 1.0 does not
+allow and amounts outside the `decimal` range — throws `ArgumentException` whose message starts with an
+id in brackets, and whose `ParamName` is the member path (e.g. `Lines[1].UnitPrice`). The id is the
+official rule id (the schematron assert id — for length rules ANAF prints a shorter tag, e.g. assert
+`BR-RO-L0502` is shown as `[BR-RO-L050]`); where no official rule applies it is the business term id
+(e.g. `[BT-153]`) or the decision id (`[decision-4]`, `[scope-v1]`). Text lengths are measured like the
+schematron's `string-length(normalize-space(.))` on the emitted (trimmed) value: runs of space, tab, CR
+and LF count as one character, while every no-break space (U+00A0) counts as a character of its own.
 
 | Rule id | When |
 |---|---|
@@ -396,8 +407,8 @@ assert `BR-RO-L0502` is shown as `[BR-RO-L050]`), and whose `ParamName` is the m
 | `BR-RO-091`/`092`, `BR-RO-L0501`/`L0502` | City blank or over 50 characters (seller/buyer) |
 | `BR-RO-L0201`/`L0202` | Post code over 20 characters |
 | `BR-RO-110`/`111`, `BR-RO-100`/`101` | Romanian county missing/unknown, Bucharest city without sector 1-6 |
-| `BR-CO-09` | Buyer VAT id prefix not in the official list (e.g. `RO`, `DE`, `EL`, `XI`) |
-| `BR-RO-120` | Non-natural-person buyer without BT-47/BT-48 on an S/E invoice |
+| `BR-CO-09` | Buyer VAT id prefix not in the official list (e.g. `RO`, `DE`, `EL`, `XI`), checked on the trimmed, upper-cased value that is emitted (`ro876543213` → `RO876543213`) |
+| `BR-RO-120` | Non-natural-person buyer without BT-47/BT-48 on an S/E invoice; on an O invoice (BR-O-02), without `LegalRegistrationId` and without an `RO` `VatId` to convert to BT-47 |
 | `BR-16` | No lines, or a null line |
 | `BR-25`, `BR-RO-L1024`, `BR-RO-L212`, `BR-RO-L303` | Item name blank or over 100; description over 200; line note over 300 |
 | `BR-22`, `BT-129` | Quantity zero, or more than 3 decimals |
@@ -410,6 +421,9 @@ assert `BR-RO-L0502` is shown as `[BR-RO-L050]`), and whose `ParamName` is the m
 | `BR-E-10`, `BR-CL-22`, `BT-120` | E line without `VatExemption`; reason code not `VATEX-…`; reason text over 200 |
 | `BR-61`, `BT-84` | Payment without IBAN, or IBAN failing the ISO 13616 mod-97 check |
 | `BR-CO-25` | Positive amount due without `DueDate` or `PaymentTerms` |
+| `BT-131` | A line's quantity × unit price is outside the `decimal` range (`ParamName` `Lines[i]`) |
+| `BT-106` | The invoice totals or a group's VAT are outside the `decimal` range (`ParamName` `Lines`) |
+| the field's `BT-…` (e.g. `BT-1`, `BT-44`, `BT-153`) | An emitted text contains a character not allowed in XML 1.0 (a C0 control other than tab/CR/LF, U+FFFE/U+FFFF, a lone surrogate), e.g. `[BT-153] Item name (BT-153) of line 1 contains U+000B, not allowed in XML 1.0.` |
 
 The BR-CO-09, BR-CL-14 and BR-CL-23 lists are copied verbatim from the 1.0.9 artifacts
 (`EN16931-UBL-model.sch:74`, `EN16931-UBL-codes.sch:81`, `EN16931-UBL-codes.sch:156`).
