@@ -1,8 +1,10 @@
 using FluentValidation;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using RoEFactura.Generation;
 using RoEFactura.Models;
 using RoEFactura.Services.Api;
 using RoEFactura.Services.Authentication;
@@ -42,6 +44,9 @@ public static class ServiceCollectionExtensions
 
         // Register utilities
         services.AddTransient<XmlFileDeserializer>();
+
+        // Register the stateless CIUS-RO XML generator (TryAdd so a consumer can override it)
+        services.TryAddSingleton<IEInvoiceXmlGenerator, EInvoiceXmlGenerator>();
 
         return services;
     }

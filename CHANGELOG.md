@@ -6,6 +6,32 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-09-29
+
+Adds a CIUS-RO UBL 2.1 XML generator (MTX-131). Additive only: no 2.0.0 public member changed.
+
+### Added
+
+- `RoEFactura.Generation.IEInvoiceXmlGenerator` / `EInvoiceXmlGenerator`: `byte[] Generate(EInvoiceDocument)`
+  builds a UBL 2.1 Invoice (TypeCode 380) conforming to CIUS-RO (specification `CIUS-RO:1.0.1`, validation
+  artifacts 1.0.9), UTF-8 without BOM, first line `<?xml version="1.0" encoding="utf-8"?>`. Covers B2B to
+  Romanian VAT payers and non-payers, natural persons without CNP (`0000000000000`), foreign buyers,
+  non-VAT-payer sellers (category O, `VATEX-EU-O`), 21%/11%/exempt mixes, and storno invoices (negative
+  quantities + `BillingReference`). Input is validated first; violations throw `ArgumentException` whose
+  message starts with the official rule id (e.g. `[BR-27]`, `[BR-RO-120]`).
+- Document model: `EInvoiceDocument`, `EInvoiceSeller`, `EInvoiceBuyer`, `EInvoiceAddress`, `EInvoiceLine`,
+  `EInvoiceVatCategory` (Standard/Exempt/NotSubject), `EInvoiceVatExemption`, `EInvoicePayment` (IBAN,
+  payment means 30), `EInvoiceBillingReference`.
+- `EInvoiceTotalsCalculator.Calculate` with `EInvoiceTotals`/`EInvoiceVatBreakdown`: BR-CO-10..17 totals,
+  2-decimal rounding away from zero, VAT rounded per (category, rate) group.
+- `RomanianAddressConverter` (`ToCountyCode`, `TryToCountyCode`, `ToBucharestSector`, `Convert`) and the
+  `RomanianAddress` record: county name/abbreviation/ISO code to `RO-XX` and Bucharest city to `SECTOR1`..`SECTOR6`,
+  tolerant of diacritics, case and hyphens.
+- `AddRoEFactura` (and every overload that calls it) registers `IEInvoiceXmlGenerator` as a singleton with
+  `TryAdd`, so consumers can override it.
+- Opt-in live test (`ANAF_LIVE_VALIDATION=1`) that sends the seven generated cases to ANAF's public validator.
+- `docs/XML_GENERATION.md`: one example per case, category rules, address conversion and error reference.
+
 ## [2.0.0] - 2026-09-25
 
 Implements the official ANAF e-Factura contract (upload/uploadb2c, `stareMesaj`, list/paged list,

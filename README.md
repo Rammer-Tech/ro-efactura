@@ -19,6 +19,9 @@ refresh tokens) for web apps. It also provides local UBL 2.1 processing with CIU
   members) — except the obsolete, disk-based `DownloadEInvoiceAsync` and the local (no-ANAF-call)
   `ValidateInvoiceXmlAsync`, neither of which takes one
 - Local UBL 2.1 processing and CIUS-RO 1.0.1 validation (see [docs/VALIDATION_RULES.md](docs/VALIDATION_RULES.md))
+- CIUS-RO UBL 2.1 XML generation (`IEInvoiceXmlGenerator`): B2B, natural persons without CNP, foreign buyers,
+  non-VAT-payer sellers, 21%/11%/exempt and storno invoices, with automatic county/sector conversion
+  (see [docs/XML_GENERATION.md](docs/XML_GENERATION.md))
 - Invoice analysis extension methods
 - Processing statistics (per service instance) and `ILogger` integration; no PII or XML content is logged
 
@@ -258,6 +261,47 @@ if (result.IsSuccess)
     var totalDue = invoice!.GetTotalAmountDue();
 }
 ```
+
+### Generating CIUS-RO XML
+
+`IEInvoiceXmlGenerator` (registered by `AddRoEFactura`) builds a CIUS-RO UBL 2.1 Invoice (TypeCode 380)
+from a plain model, computes the totals and VAT breakdown, converts Romanian counties to `RO-XX` and
+Bucharest sectors to `SECTORn`, and returns UTF-8 bytes without a BOM, ready for `ValidateWithAnafAsync`
+or `UploadAsync`. Invalid input throws `ArgumentException` citing the rule id (e.g. `[BR-27]`).
+
+```csharp
+using RoEFactura.Generation;
+
+var document = new EInvoiceDocument
+{
+    Number = "FCT-0001",
+    IssueDate = new DateOnly(2026, 9, 15),
+    DueDate = new DateOnly(2026, 9, 30),
+    Seller = new EInvoiceSeller
+    {
+        Name = "Exemplu SRL", Cui = "RO1234567897", IsVatPayer = true,
+        Address = new EInvoiceAddress { Street = "Str. Exemplu 1", City = "Cluj-Napoca", County = "Cluj", CountryCode = "RO" }
+    },
+    Buyer = new EInvoiceBuyer
+    {
+        Name = "Client SRL", VatId = "RO876543213",
+        Address = new EInvoiceAddress { Street = "Bd. Exemplu 10", City = "Sector 3", County = "București", CountryCode = "RO" }
+    },
+    Payment = new EInvoicePayment("RO49AAAA1B31007593840000"),
+    Lines =
+    [
+        new EInvoiceLine { Name = "Servicii", Quantity = 1m, UnitPrice = 100.00m,
+            VatCategory = EInvoiceVatCategory.Standard, VatRate = 21m }
+    ]
+};
+
+byte[] xml = generator.Generate(document); // IEInvoiceXmlGenerator from DI
+var anafCheck = await invoices.ValidateWithAnafAsync(xml, AnafDocumentStandard.Ubl);
+```
+
+v1 supports RON only and VAT categories S, E and O. See [docs/XML_GENERATION.md](docs/XML_GENERATION.md)
+for one example per case (B2B, natural person without CNP, foreign buyer, non-VAT-payer seller,
+mixed 21%/11%/exempt, storno), the category rules, the address conversion table and every exception.
 
 ### Validate (local, RO_CIUS/CIUS-RO)
 
@@ -524,6 +568,7 @@ flowchart TB
 ## Additional Documentation
 
 - API reference: [docs/API_REFERENCE.md](docs/API_REFERENCE.md)
+- XML generation: [docs/XML_GENERATION.md](docs/XML_GENERATION.md)
 - Validation rules: [docs/VALIDATION_RULES.md](docs/VALIDATION_RULES.md)
 - Troubleshooting: [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)
 - Examples: [docs/EXAMPLES.md](docs/EXAMPLES.md)
