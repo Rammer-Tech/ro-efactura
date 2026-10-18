@@ -72,11 +72,26 @@ internal sealed class OAuthRecordingHttpMessageHandler : HttpMessageHandler
 /// <summary>
 /// An <see cref="IHttpClientFactory"/> that always returns a client wired to a given handler, with the handler
 /// left undisposed (the test owns disposal via the handler's lifetime, per the recording handler being reused
-/// across assertions).
+/// across assertions). It also records every requested client name (the parameterless
+/// <c>HttpClientFactoryExtensions.CreateClient</c> forwards <c>Options.DefaultName</c>, i.e. <c>""</c>) and every
+/// created client, so tests can assert which named client the code under test asked for.
 /// </summary>
 internal sealed class FakeHttpClientFactory(HttpMessageHandler handler) : IHttpClientFactory
 {
-    public HttpClient CreateClient(string name) => new(handler, disposeHandler: false);
+    private readonly List<string> _requestedClientNames = [];
+    private readonly List<HttpClient> _createdClients = [];
+
+    public IReadOnlyList<string> RequestedClientNames => _requestedClientNames;
+
+    public IReadOnlyList<HttpClient> CreatedClients => _createdClients;
+
+    public HttpClient CreateClient(string name)
+    {
+        _requestedClientNames.Add(name);
+        HttpClient client = new(handler, disposeHandler: false);
+        _createdClients.Add(client);
+        return client;
+    }
 }
 
 /// <summary>

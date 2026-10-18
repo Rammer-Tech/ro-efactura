@@ -34,9 +34,12 @@ public static class ServiceCollectionExtensions
         services.AddValidatorsFromAssemblyContaining<RoCiusUblValidator>();
         services.AddScoped<IValidator<InvoiceType>, RoCiusUblValidator>();
 
-        // Register the typed ANAF e-invoice client and the HttpClient factory for ANAF OAuth
+        // Typed e-invoice client, the default factory registration (kept for other callers) and the named client
+        // used for ANAF OAuth token requests. The consumer configures the named client; never retry POST on it,
+        // because refresh tokens and authorization codes are single-use.
         services.AddHttpClient<IAnafEInvoiceClient, AnafEInvoiceClient>();
         services.AddHttpClient();
+        services.AddHttpClient(RoEFacturaHttpClients.AnafOAuth);
 
         // Register service interfaces with internal implementations
         services.AddScoped<IAnafOAuthClient, AnafOAuthClient>();
