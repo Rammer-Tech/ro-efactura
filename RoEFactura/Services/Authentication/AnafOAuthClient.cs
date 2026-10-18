@@ -130,6 +130,8 @@ internal class AnafOAuthClient : IAnafOAuthClient
     /// Posts a token request (authorization-code exchange or refresh) to <paramref name="tokenUrl"/> with HTTP Basic
     /// client authentication, classifies non-2xx responses into a <see cref="TokenExchangeErrorType"/>, and parses a
     /// successful response into a <see cref="Token"/>. Never logs the request body, the response body or token values.
+    /// The request is sent through the named client <see cref="RoEFacturaHttpClients.AnafOAuth"/>, which the consumer
+    /// configures; the library itself never retries, because refresh tokens and authorization codes are single-use.
     /// </summary>
     private async Task<Token> RequestTokenAsync(
         string operation,
@@ -139,7 +141,7 @@ internal class AnafOAuthClient : IAnafOAuthClient
         IEnumerable<KeyValuePair<string, string>> form,
         CancellationToken ct)
     {
-        HttpClient client = _httpClientFactory.CreateClient();
+        HttpClient client = _httpClientFactory.CreateClient(RoEFacturaHttpClients.AnafOAuth);
 
         // Configure timeout if not already set by the factory
         if (client.Timeout == TimeSpan.FromSeconds(100)) // Default timeout

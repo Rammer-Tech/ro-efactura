@@ -1,6 +1,6 @@
 # RoEFactura API Reference
 
-This document describes the public API surface of the `RoEFactura` NuGet package (v2.1.0). It is
+This document describes the public API surface of the `RoEFactura` NuGet package (v2.2.0). It is
 organized by feature area and includes usage notes for each interface and model. For validation-rule
 details, see [VALIDATION_RULES.md](VALIDATION_RULES.md); for migration from 1.x, see the "Migrating
 from 1.x" section in the [README](../README.md).
@@ -43,10 +43,32 @@ Notes:
   and `IUblProcessingService`, plus *(2.1.0)* `IEInvoiceXmlGenerator` as a singleton via `TryAdd` (every
   overload, including `AddRoEFacturaWithOAuth`, goes through it; register your own implementation first
   to override it).
+- `AddRoEFactura(...)` also registers *(2.2.0)* the named client `RoEFacturaHttpClients.AnafOAuth` and keeps the
+  unnamed `AddHttpClient()` registration (every overload goes through it).
 - `AddRoEFacturaWithOAuth(...)` validates `AnafOAuthOptions` before registering and throws
   `ArgumentException`/`InvalidOperationException` if invalid.
 - A missing `RoEFactura` configuration section, a missing key, or an unset `Environment` value all
   resolve to `AnafEnvironment.Test`.
+
+### `RoEFacturaHttpClients` *(new in 2.2.0)*
+
+`public static class RoEFacturaHttpClients` in the `RoEFactura` namespace. Names of the `IHttpClientFactory`
+clients that a consumer can configure.
+
+| Member | Value | Description |
+| --- | --- | --- |
+| `AnafOAuth` (`const string`) | `"RoEFactura.AnafOAuth"` | Client used for every ANAF OAuth token request (code exchange and refresh). Registered by all `AddRoEFactura*` overloads. The certificate flow does not use it. The value never changes. |
+
+Configure it **without automatic retries for POST**: ANAF invalidates the previous refresh token on every
+refresh and an authorization code is single-use, so a retried request re-sends a consumed credential and ends
+in `invalid_grant`. The library itself never retries.
+
+```csharp
+#pragma warning disable EXTEXP0001 // RemoveAllResilienceHandlers (Microsoft.Extensions.Http.Resilience) is experimental
+services.AddHttpClient(RoEFacturaHttpClients.AnafOAuth)
+    .RemoveAllResilienceHandlers();
+#pragma warning restore EXTEXP0001
+```
 
 ## Environment configuration
 
@@ -128,6 +150,11 @@ Methods:
 
 All members are unchanged from 1.x except the two marked "new in 2.0.0"; no optional parameter was
 added to any existing member.
+
+Since 2.2.0 the three `ExchangeAuthorizationCodeAsync` overloads and `RefreshAccessTokenAsync` send their
+request through the named client `RoEFacturaHttpClients.AnafOAuth` (a client left at the factory default
+timeout of 100 s is lowered to 30 s). The `GetAccessTokenAsync` certificate overloads do not use it. See
+`RoEFacturaHttpClients` for the no-retry-on-POST rule.
 
 ### `Token`
 

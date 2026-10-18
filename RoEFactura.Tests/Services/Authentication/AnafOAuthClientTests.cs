@@ -305,4 +305,54 @@ public class AnafOAuthClientTests
 
         code.Should().Be(expected);
     }
+
+    [Fact]
+    public async Task RefreshAccessTokenAsync_RequestsNamedAnafOAuthClient()
+    {
+        var handler = OAuthRecordingHttpMessageHandler.Returning(HttpStatusCode.OK, SuccessTokenJson);
+        var factory = new FakeHttpClientFactory(handler);
+        var client = new AnafOAuthClient(factory, new CapturingLogger<AnafOAuthClient>());
+
+        await client.RefreshAccessTokenAsync("refresh-token-1", ValidOptions(), CancellationToken.None);
+
+        // The literal (not the constant) pins the cross-repo contract value that consumers configure by name.
+        factory.RequestedClientNames.Should().Equal("RoEFactura.AnafOAuth");
+    }
+
+    [Fact]
+    public async Task ExchangeAuthorizationCodeAsync_Options_RequestsNamedAnafOAuthClient()
+    {
+        var handler = OAuthRecordingHttpMessageHandler.Returning(HttpStatusCode.OK, SuccessTokenJson);
+        var factory = new FakeHttpClientFactory(handler);
+        var client = new AnafOAuthClient(factory, new CapturingLogger<AnafOAuthClient>());
+
+        await client.ExchangeAuthorizationCodeAsync("auth-code-1", ValidOptions(), CancellationToken.None);
+
+        factory.RequestedClientNames.Should().Equal("RoEFactura.AnafOAuth");
+    }
+
+    [Fact]
+    public async Task ExchangeAuthorizationCodeAsync_FourStringOverload_RequestsNamedAnafOAuthClient()
+    {
+        var handler = OAuthRecordingHttpMessageHandler.Returning(HttpStatusCode.OK, SuccessTokenJson);
+        var factory = new FakeHttpClientFactory(handler);
+        var client = new AnafOAuthClient(factory, new CapturingLogger<AnafOAuthClient>());
+
+        await client.ExchangeAuthorizationCodeAsync(
+            "auth-code-1", "client-id", "client-secret", "https://app.example.test/callback");
+
+        factory.RequestedClientNames.Should().Equal("RoEFactura.AnafOAuth");
+    }
+
+    [Fact]
+    public async Task RefreshAccessTokenAsync_FactoryDefaultTimeout_IsLoweredToThirtySeconds()
+    {
+        var handler = OAuthRecordingHttpMessageHandler.Returning(HttpStatusCode.OK, SuccessTokenJson);
+        var factory = new FakeHttpClientFactory(handler);
+        var client = new AnafOAuthClient(factory, new CapturingLogger<AnafOAuthClient>());
+
+        await client.RefreshAccessTokenAsync("refresh-token-1", ValidOptions(), CancellationToken.None);
+
+        factory.CreatedClients.Should().ContainSingle().Which.Timeout.Should().Be(TimeSpan.FromSeconds(30));
+    }
 }

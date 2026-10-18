@@ -188,6 +188,44 @@ services.AddRoEFacturaWithOAuth(new AnafOAuthOptions
 `AddRoEFacturaWithOAuth` always registers the `RoEFactura` section too (via the same
 `IConfiguration`); if that section is absent, the client still defaults to TEST.
 
+### HTTP clients and retries
+
+Each kind of ANAF call goes through its own client:
+
+| Call | Client |
+| --- | --- |
+| e-Factura API (`IAnafEInvoiceClient`) | the typed `HttpClient` registered for `IAnafEInvoiceClient` |
+| OAuth token requests (`ExchangeAuthorizationCodeAsync`, `RefreshAccessTokenAsync`) | the named client `RoEFacturaHttpClients.AnafOAuth` (`"RoEFactura.AnafOAuth"`, new in 2.2.0) |
+| Certificate flow (`GetAccessTokenAsync`) | its own `HttpClient` with the client certificate; not configurable through the factory |
+
+The library never retries a request. If your app adds a retry or resilience handler to all clients
+(`ConfigureHttpClientDefaults` + `AddStandardResilienceHandler`), **remove automatic retries for POST from the
+named OAuth client**. ANAF returns a new refresh token on every refresh and invalidates the old one, and an
+authorization code is single-use. A retry after a timeout re-sends a credential that ANAF already consumed, so
+the refresh fails with `invalid_grant` even though the first attempt succeeded.
+
+Option 1 - remove the resilience handler from the named client:
+
+```csharp
+#pragma warning disable EXTEXP0001 // RemoveAllResilienceHandlers (Microsoft.Extensions.Http.Resilience) is experimental
+services.AddHttpClient(RoEFacturaHttpClients.AnafOAuth)
+    .RemoveAllResilienceHandlers();
+#pragma warning restore EXTEXP0001
+```
+
+Option 2 - keep the standard handler but disable retries for unsafe methods:
+
+```csharp
+services.AddHttpClient(RoEFacturaHttpClients.AnafOAuth).AddStandardResilienceHandler(o => o.Retry.DisableForUnsafeHttpMethods());
+```
+
+With option 2 also raise the handler's attempt and total timeouts to at least 30 s, otherwise the standard
+handler's shorter timeouts surface as a Polly `TimeoutRejectedException` instead of a `TokenExchangeException`
+with `TokenExchangeErrorType.Timeout`.
+
+The timeout rule is unchanged: a named client left at the factory default of 100 s is lowered to 30 s, and any
+timeout you configure on it is kept.
+
 ## Operations
 
 All ANAF-calling operations below take a `CancellationToken` (optional on the new members, required on

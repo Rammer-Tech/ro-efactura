@@ -109,6 +109,10 @@ dotnet pack RoEFactura/RoEFactura.csproj
      - `AddRoEFacturaWithOAuth(options)`: OAuth with direct configuration
      - `AddRoEFacturaWithOAuth(configuration, sectionName = "AnafOAuth")`: OAuth with appsettings.json binding
    - Uses the `HttpClient` factory pattern (`AddHttpClient<IAnafEInvoiceClient, AnafEInvoiceClient>()`)
+   - `AddRoEFactura` also registers the named client `RoEFacturaHttpClients.AnafOAuth` (`"RoEFactura.AnafOAuth"`),
+     which `AnafOAuthClient.RequestTokenAsync` uses for refresh and code exchange (the certificate flow keeps its
+     own `HttpClient`). The consumer must configure it without retry on POST: refresh tokens and authorization
+     codes are single-use. The unnamed `AddHttpClient()` registration is kept
    - FluentValidation integration for all validators
 
 8. **Utilities** (`Utilities/`)
@@ -305,6 +309,7 @@ trees, so the following members must keep their **exact** declaration and behavi
 | `IAnafOAuthClient.ExchangeAuthorizationCodeAsync(string, AnafOAuthOptions)` | Kept, delegates to the new CT overload |
 | `Token.AccessToken`/`ExpiresIn`/`RefreshToken` | Unchanged JSON names; new members are `[JsonIgnore]` |
 | `ServiceCollectionExtensions.AddRoEFacturaWithOAuth(IConfiguration, string sectionName = "AnafOAuth")` | Signature unchanged; now also binds `RoEFactura` |
+| `RoEFacturaHttpClients.AnafOAuth` = `"RoEFactura.AnafOAuth"` | Value never changes; micro-taxe configures the named client by it |
 | `RoCiusUblValidator` public parameterless constructor + `Validate` | Kept; must stay null-safe on sparse documents |
 | `AnafDownloadErrorParser`, `AnafDownloadWindowExpiredException`, `ProcessingResult<T>` | Unchanged |
 | DTO property names/types (`Items`, `PageCount`, etc.) | Unchanged; only additive properties (`Error`, `Title`) |

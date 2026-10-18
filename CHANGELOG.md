@@ -6,6 +6,59 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-10-18
+
+Named `HttpClient` for ANAF OAuth token requests (MTX-144). Additive only: no 2.1.0 public member changed.
+
+### Added
+
+- `RoEFactura.RoEFacturaHttpClients.AnafOAuth` (`"RoEFactura.AnafOAuth"`): the name of the client used for every ANAF
+  OAuth token request. The value never changes.
+- Every `AddRoEFactura*` overload now also registers `services.AddHttpClient(RoEFacturaHttpClients.AnafOAuth)`.
+  The unnamed `services.AddHttpClient()` registration is kept.
+
+### Changed
+
+- `ExchangeAuthorizationCodeAsync` (all three overloads) and `RefreshAccessTokenAsync` now create their client
+  with `IHttpClientFactory.CreateClient(RoEFacturaHttpClients.AnafOAuth)` instead of the unnamed default client.
+  The library itself never retries a token request.
+- Configuration applied to all clients (`ConfigureHttpClientDefaults`) still applies to the named client.
+  Configuration applied only to the unnamed client (`Options.DefaultName`) no longer affects token requests.
+- The certificate-based `GetAccessTokenAsync` overloads are unchanged.
+- The timeout is unchanged: a client left at the factory default of 100 s is lowered to 30 s, and any other
+  configured timeout is kept.
+
+### Consumers
+
+Required action: configure the `RoEFacturaHttpClients.AnafOAuth` client with no automatic retry on POST.
+ANAF issues a new refresh token on every refresh and invalidates the old one. If a retry handler re-sends the
+request after a timeout, it carries the old token, ANAF answers `invalid_grant` and the company needs
+re-authorization even though the first refresh succeeded. Authorization codes are single-use too.
+
+With `ConfigureHttpClientDefaults` + `AddStandardResilienceHandler`, pick one of two options.
+
+Option 1 - remove the resilience handler from the named client (`RemoveAllResilienceHandlers` is in
+`Microsoft.Extensions.Http.Resilience` and is experimental):
+
+```csharp
+#pragma warning disable EXTEXP0001 // RemoveAllResilienceHandlers is experimental
+services.AddHttpClient(RoEFacturaHttpClients.AnafOAuth)
+    .RemoveAllResilienceHandlers();
+#pragma warning restore EXTEXP0001
+```
+
+Option 2 - keep the standard handler but disable retries for unsafe methods:
+
+```csharp
+services.AddHttpClient(RoEFacturaHttpClients.AnafOAuth).AddStandardResilienceHandler(o => o.Retry.DisableForUnsafeHttpMethods());
+```
+
+With option 2 also raise the handler's attempt and total timeouts to at least 30 s, otherwise the standard
+handler's shorter timeouts surface as a Polly `TimeoutRejectedException` instead of a `TokenExchangeException`
+with `TokenExchangeErrorType.Timeout`.
+
+The library does not reference `Microsoft.Extensions.Http.Resilience`.
+
 ## [2.1.0] - 2026-09-29
 
 Adds a CIUS-RO UBL 2.1 XML generator (MTX-131). Additive only: no 2.0.0 public member changed.
