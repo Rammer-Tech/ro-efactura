@@ -625,7 +625,7 @@ flowchart TB
 
 ## Contributing
 
-Contributions are welcome. Please open an issue with details and a minimal reproduction. Pull requests should include documentation updates where relevant.
+Contributions are welcome. Please open an issue with details and a minimal reproduction. Pull requests should include documentation updates where relevant. The CI workflow does not start on its own: a maintainer runs it from the Actions tab (`Build and Test`) on the PR branch.
 
 ## License
 
