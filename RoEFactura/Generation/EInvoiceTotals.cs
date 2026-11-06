@@ -1,7 +1,7 @@
 namespace RoEFactura.Generation;
 
 /// <summary>
-/// Document totals computed by <see cref="EInvoiceTotalsCalculator"/>. All amounts are in RON, rounded
+/// Document totals computed by <see cref="EInvoiceTotalsCalculator"/>. All amounts are in the document currency, rounded
 /// to 2 decimals away from zero, and may be negative (storno).
 /// </summary>
 /// <param name="LineNetAmounts">Invoice line net amount (BT-131) per line, in line order.</param>

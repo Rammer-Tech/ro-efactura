@@ -6,6 +6,17 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+### Added
+
+- `EInvoiceDocument.VatCurrencyRate` (RON per one unit of `CurrencyCode`). A document in any ISO 4217 currency is generated
+  with `cbc:TaxCurrencyCode` RON (BT-6) and a second `cac:TaxTotal` in RON (BT-111, the total VAT converted with the rate).
+  Required for a non-RON currency (BR-RO-030); RON documents are unchanged.
+
+### Changed
+
+- `EInvoiceDocumentGuard` no longer refuses non-RON currencies (`decision-4` removed). A currency must be an ISO 4217
+  alpha-3 code (`BR-CL-04`).
+
 ## [2.2.0] - 2026-10-18
 
 Named `HttpClient` for ANAF OAuth token requests (MTX-144). Additive only: no 2.1.0 public member changed.

@@ -51,7 +51,8 @@ public sealed class EInvoiceXmlGenerator : IEInvoiceXmlGenerator
 
     private static XDocument Build(EInvoiceDocument document, EInvoiceTotals totals)
     {
-        string currency = EInvoiceDocumentGuard.SupportedCurrency;
+        string currency = EInvoiceDocumentGuard.NormalizeCurrency(document.CurrencyCode);
+        bool hasVatAccountingCurrency = currency != EInvoiceDocumentGuard.VatAccountingCurrency;
 
         // Root children follow the UBL 2.1 Invoice xsd sequence.
         XElement root = new(InvoiceNs + "Invoice",
@@ -70,16 +71,22 @@ public sealed class EInvoiceXmlGenerator : IEInvoiceXmlGenerator
             CbcElement("InvoiceTypeCode", InvoiceTypeCode),
             // BT-22 (BR-RO-A020, BR-RO-L302).
             (document.Notes ?? []).Select(note => CbcElement("Note", note.Trim())),
-            // BT-5 (BR-05, BR-CL-04); no BT-6, so BR-RO-030 is met by its RON-only branch.
+            // BT-5 (BR-05, BR-CL-04).
             CbcElement("DocumentCurrencyCode", currency),
+            // BT-6 (BR-53, BR-RO-030): the VAT accounting currency is RON whenever the document is in another currency.
+            hasVatAccountingCurrency ? CbcElement("TaxCurrencyCode", EInvoiceDocumentGuard.VatAccountingCurrency) : null,
             BuildBillingReference(document.BillingReference),
             BuildSeller(document.Seller),
             BuildBuyer(document),
             BuildPaymentMeans(document.Payment),
             BuildPaymentTerms(document.PaymentTerms),
-            BuildTaxTotal(totals, document.VatExemption),
-            BuildLegalMonetaryTotal(totals),
-            document.Lines.Select((line, index) => BuildLine(line, index + 1, totals.LineNetAmounts[index])));
+            BuildTaxTotal(totals, document.VatExemption, currency),
+            // BT-111 (BR-53): the VAT total in RON, only for a document in another currency.
+            hasVatAccountingCurrency
+                ? BuildVatAccountingTaxTotal(totals.TaxAmount, document.VatCurrencyRate!.Value)
+                : null,
+            BuildLegalMonetaryTotal(totals, currency),
+            document.Lines.Select((line, index) => BuildLine(line, index + 1, totals.LineNetAmounts[index], currency)));
 
         return new XDocument(new XDeclaration("1.0", "utf-8", null), root);
     }
@@ -178,16 +185,25 @@ public sealed class EInvoiceXmlGenerator : IEInvoiceXmlGenerator
             : CacElement("PaymentTerms", CbcElement("Note", paymentTerms.Trim()));
     }
 
-    private static XElement BuildTaxTotal(EInvoiceTotals totals, EInvoiceVatExemption? exemption)
+    private static XElement BuildTaxTotal(EInvoiceTotals totals, EInvoiceVatExemption? exemption, string currency)
     {
         // Exactly one TaxTotal in the document currency (BR-CO-15); BT-110 = sum of BT-117 (BR-CO-14).
         return CacElement("TaxTotal",
-            Amount("TaxAmount", totals.TaxAmount),
+            Amount("TaxAmount", totals.TaxAmount, currency),
             totals.VatBreakdown.Select(group => CacElement("TaxSubtotal",
                 // BT-116 (BR-45, BR-S-08/BR-E-08/BR-O-08), BT-117 (BR-46, BR-S-09/BR-E-09/BR-O-09, BR-CO-17).
-                Amount("TaxableAmount", group.TaxableAmount),
-                Amount("TaxAmount", group.TaxAmount),
+                Amount("TaxableAmount", group.TaxableAmount, currency),
+                Amount("TaxAmount", group.TaxAmount, currency),
                 BuildSubtotalCategory(group, exemption))));
+    }
+
+    /// <summary>BT-111 (BR-53): the total VAT in the VAT accounting currency RON, converted from the document currency at the
+    /// document rate (RON per one unit). Carries no subtotals: the VAT breakdown stays in the document currency.</summary>
+    private static XElement BuildVatAccountingTaxTotal(decimal vatInDocumentCurrency, decimal rate)
+    {
+        decimal vatInRon = decimal.Round(vatInDocumentCurrency * rate, 2, MidpointRounding.AwayFromZero);
+        return CacElement("TaxTotal",
+            Amount("TaxAmount", vatInRon, EInvoiceDocumentGuard.VatAccountingCurrency));
     }
 
     private static XElement BuildSubtotalCategory(EInvoiceVatBreakdown group, EInvoiceVatExemption? exemption)
@@ -226,18 +242,18 @@ public sealed class EInvoiceXmlGenerator : IEInvoiceXmlGenerator
             CacElement("TaxScheme", CbcElement("ID", VatSchemeId)));
     }
 
-    private static XElement BuildLegalMonetaryTotal(EInvoiceTotals totals)
+    private static XElement BuildLegalMonetaryTotal(EInvoiceTotals totals, string currency)
     {
         // BT-106 (BR-12, BR-CO-10), BT-109 (BR-13, BR-CO-13), BT-112 (BR-14, BR-CO-15), BT-115 (BR-15, BR-CO-16);
         // all with at most 2 decimals (BR-DEC-09/12/14/18).
         return CacElement("LegalMonetaryTotal",
-            Amount("LineExtensionAmount", totals.LineExtensionAmount),
-            Amount("TaxExclusiveAmount", totals.TaxExclusiveAmount),
-            Amount("TaxInclusiveAmount", totals.TaxInclusiveAmount),
-            Amount("PayableAmount", totals.PayableAmount));
+            Amount("LineExtensionAmount", totals.LineExtensionAmount, currency),
+            Amount("TaxExclusiveAmount", totals.TaxExclusiveAmount, currency),
+            Amount("TaxInclusiveAmount", totals.TaxInclusiveAmount, currency),
+            Amount("PayableAmount", totals.PayableAmount, currency));
     }
 
-    private static XElement BuildLine(EInvoiceLine line, int number, decimal lineNet)
+    private static XElement BuildLine(EInvoiceLine line, int number, decimal lineNet, string currency)
     {
         return CacElement("InvoiceLine",
             // BT-126 (BR-21).
@@ -249,7 +265,7 @@ public sealed class EInvoiceXmlGenerator : IEInvoiceXmlGenerator
                 new XAttribute("unitCode", line.UnitCode.Trim()),
                 line.Quantity.ToString(QuantityFormat, CultureInfo.InvariantCulture)),
             // BT-131 (BR-24, BR-DEC-23).
-            Amount("LineExtensionAmount", lineNet),
+            Amount("LineExtensionAmount", lineNet, currency),
             CacElement("Item",
                 // BT-154 (BR-RO-L212).
                 string.IsNullOrWhiteSpace(line.Description) ? null : CbcElement("Description", line.Description.Trim()),
@@ -268,7 +284,7 @@ public sealed class EInvoiceXmlGenerator : IEInvoiceXmlGenerator
             // BT-146 (BR-26, BR-27 >= 0), up to 4 decimals emitted verbatim.
             CacElement("Price",
                 new XElement(Cbc + "PriceAmount",
-                    new XAttribute("currencyID", EInvoiceDocumentGuard.SupportedCurrency),
+                    new XAttribute("currencyID", currency),
                     line.UnitPrice.ToString(PriceFormat, CultureInfo.InvariantCulture))));
     }
 
@@ -284,11 +300,11 @@ public sealed class EInvoiceXmlGenerator : IEInvoiceXmlGenerator
         };
     }
 
-    /// <summary>An amount in RON with exactly 2 decimals (BR-DEC-*, BR-RO-Z2; BR-CL-03 currencyID).</summary>
-    private static XElement Amount(string name, decimal value)
+    /// <summary>An amount in <paramref name="currency"/> with exactly 2 decimals (BR-DEC-*, BR-RO-Z2; BR-CL-03 currencyID).</summary>
+    private static XElement Amount(string name, decimal value, string currency)
     {
         return new XElement(Cbc + name,
-            new XAttribute("currencyID", EInvoiceDocumentGuard.SupportedCurrency),
+            new XAttribute("currencyID", currency),
             value.ToString(AmountFormat, CultureInfo.InvariantCulture));
     }
 

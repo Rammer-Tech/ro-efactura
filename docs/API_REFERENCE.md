@@ -389,7 +389,7 @@ rule violation.
 
 | Type | Members |
 |---|---|
-| `EInvoiceDocument` | required `Number`, `IssueDate` (`DateOnly`), `Seller`, `Buyer`, `Lines`; optional `DueDate`, `CurrencyCode` (`"RON"`), `Notes`, `Payment`, `PaymentTerms`, `BillingReference`, `VatExemption` |
+| `EInvoiceDocument` | required `Number`, `IssueDate` (`DateOnly`), `Seller`, `Buyer`, `Lines`; optional `DueDate`, `CurrencyCode` (`"RON"`), `VatCurrencyRate` (required when the currency is not RON), `Notes`, `Payment`, `PaymentTerms`, `BillingReference`, `VatExemption` |
 | `EInvoiceSeller` | required `Name`, `Cui`, `IsVatPayer`, `Address`; optional `TradeRegisterNumber` (BT-33) |
 | `EInvoiceBuyer` | required `Name`, `Address`; optional `IsNaturalPerson`, `LegalRegistrationId` (BT-47; `0000000000000` for a foreign buyer without a Romanian CUI/NIF, see docs/XML_GENERATION.md "ERRIdentif"), `VatId` (BT-48); const `NaturalPersonWithoutCnpId = "0000000000000"` |
 | `EInvoiceAddress` | required `Street`, `City`, `CountryCode`; optional `County`, `PostalCode` |

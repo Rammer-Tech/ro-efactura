@@ -19,12 +19,15 @@ public class EInvoiceXmlGeneratorTests
     /// <summary>§3.3 top-level order (UBL 2.1 Invoice xsd sequence); Note and InvoiceLine may repeat.</summary>
     private static readonly string[] UblTopLevelSequence =
     [
-        "CustomizationID", "ID", "IssueDate", "DueDate", "InvoiceTypeCode", "Note", "DocumentCurrencyCode",
+        "CustomizationID", "ID", "IssueDate", "DueDate", "InvoiceTypeCode", "Note", "DocumentCurrencyCode", "TaxCurrencyCode",
         "BillingReference", "AccountingSupplierParty", "AccountingCustomerParty", "PaymentMeans", "PaymentTerms",
         "TaxTotal", "LegalMonetaryTotal", "InvoiceLine"
     ];
 
-    private static readonly string[] RepeatableTopLevelElements = ["Note", "InvoiceLine"];
+    private static readonly string[] RepeatableTopLevelElements = ["Note", "TaxTotal", "InvoiceLine"];
+
+    private static readonly XNamespace Cac = "urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2";
+    private static readonly XNamespace Cbc = "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2";
 
     private const string Buyer = "/inv:Invoice/cac:AccountingCustomerParty/cac:Party";
     private const string Seller = "/inv:Invoice/cac:AccountingSupplierParty/cac:Party";
@@ -84,8 +87,45 @@ public class EInvoiceXmlGeneratorTests
 
             names.Should().ContainInOrder("CustomizationID", "ID", "IssueDate", "InvoiceTypeCode", "DocumentCurrencyCode",
                 "AccountingSupplierParty", "AccountingCustomerParty", "TaxTotal", "LegalMonetaryTotal", "InvoiceLine");
-            names.Count(n => n == "TaxTotal").Should().Be(1, $"case {caseName} has exactly one TaxTotal in RON");
+            // One TaxTotal in the document currency, plus one in RON (BT-111) when the document is in another currency.
+            int expectedTaxTotals = EInvoiceTestCases.Get(caseName).CurrencyCode == "RON" ? 1 : 2;
+            names.Count(n => n == "TaxTotal").Should().Be(expectedTaxTotals, $"case {caseName}");
+            names.Contains("TaxCurrencyCode").Should().Be(expectedTaxTotals == 2, $"case {caseName}");
         }
+    }
+
+    [Fact]
+    public void Generate_ForeignCurrency_EmitsEurAmountsWithVatInRonAsAccountingCurrency()
+    {
+        GeneratedXml xml = GeneratedXml.From(EInvoiceTestCases.ForeignCurrencyEur());
+
+        xml.Value("/inv:Invoice/cbc:DocumentCurrencyCode").Should().Be("EUR");
+        xml.Value("/inv:Invoice/cbc:TaxCurrencyCode").Should().Be("RON");
+
+        // Document VAT: 21% of 2499.99 = 524.9979 -> 525.00 EUR (BT-110, the EUR TaxTotal).
+        // BT-111: 525.00 EUR x 4.9746 = 2611.665 -> 2611.67 RON (AwayFromZero), in the second TaxTotal.
+        List<XElement> taxTotals = xml.Elements("/inv:Invoice/cac:TaxTotal").ToList();
+        taxTotals.Should().HaveCount(2);
+        taxTotals[0].Element(Cbc + "TaxAmount")!.Value.Should().Be("525.00");
+        taxTotals[0].Element(Cbc + "TaxAmount")!.Attribute("currencyID")!.Value.Should().Be("EUR");
+        taxTotals[0].Elements(Cac + "TaxSubtotal").Should().HaveCount(1);
+        taxTotals[1].Element(Cbc + "TaxAmount")!.Value.Should().Be("2611.67");
+        taxTotals[1].Element(Cbc + "TaxAmount")!.Attribute("currencyID")!.Value.Should().Be("RON");
+        taxTotals[1].Elements(Cac + "TaxSubtotal").Should().BeEmpty();
+
+        xml.Elements("/inv:Invoice/cac:InvoiceLine/cac:Price/cbc:PriceAmount")
+            .Should().OnlyContain(p => p.Attribute("currencyID")!.Value == "EUR");
+        xml.Elements("/inv:Invoice/cac:LegalMonetaryTotal/cbc:PayableAmount")
+            .Should().OnlyContain(p => p.Attribute("currencyID")!.Value == "EUR");
+    }
+
+    [Fact]
+    public void Generate_RonDocument_EmitsNoTaxCurrencyCodeAndNoSecondTaxTotal()
+    {
+        GeneratedXml xml = GeneratedXml.From(EInvoiceTestCases.B2BRoVatPayerBuyer());
+
+        xml.Elements("/inv:Invoice/cbc:TaxCurrencyCode").Should().BeEmpty();
+        xml.Elements("/inv:Invoice/cac:TaxTotal").Should().HaveCount(1);
     }
 
     [Fact]

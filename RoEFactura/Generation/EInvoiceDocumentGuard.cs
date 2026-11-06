@@ -17,7 +17,11 @@ namespace RoEFactura.Generation;
 internal static class EInvoiceDocumentGuard
 {
     internal const string RomaniaCountryCode = "RO";
-    internal const string SupportedCurrency = "RON";
+    /// <summary>The VAT accounting currency (BT-6) and the currency of every amount of a RON document.</summary>
+    internal const string VatAccountingCurrency = "RON";
+
+    /// <summary>The document currency code, trimmed and upper-cased (BT-5).</summary>
+    internal static string NormalizeCurrency(string? currency) => (currency ?? string.Empty).Trim().ToUpperInvariant();
 
     private const int MaxInvoiceNumberLength = 200;      // BR-RO-L155
     private const int MaxNotes = 20;                     // BR-RO-A020
@@ -77,10 +81,18 @@ internal static class EInvoiceDocumentGuard
             throw Error("BR-RO-L155", $"Invoice number (BT-1) must not exceed {MaxInvoiceNumberLength} characters.", "Number");
         }
 
-        // Orchestrator decision 4: document currency = VAT currency = RON in v1 (BR-RO-030 branch 4).
-        if (!string.Equals(document.CurrencyCode?.Trim(), SupportedCurrency, StringComparison.OrdinalIgnoreCase))
+        // BT-5 (BR-05, BR-CL-04): an ISO 4217 alpha-3 code.
+        string currency = NormalizeCurrency(document.CurrencyCode);
+        if (!Regex.IsMatch(currency, "^[A-Z]{3}$"))
         {
-            throw Error("decision-4", $"Only RON is supported in v1; got CurrencyCode '{document.CurrencyCode}'.", "CurrencyCode");
+            throw Error("BR-CL-04", $"Document currency (BT-5) must be an ISO 4217 alpha-3 code; got '{document.CurrencyCode}'.", "CurrencyCode");
+        }
+
+        // BR-RO-030: a document currency other than RON needs the VAT accounting currency RON (BT-6) and the VAT in RON
+        // (BT-111), which the converted VAT needs the rate for (RON per one unit of the document currency).
+        if (currency != VatAccountingCurrency && (document.VatCurrencyRate is not { } vatRate || vatRate <= 0m))
+        {
+            throw Error("BR-RO-030", $"A {currency} invoice needs VatCurrencyRate (RON per {currency}) to write the VAT in RON (BT-111).", "VatCurrencyRate");
         }
 
         IReadOnlyList<string> notes = document.Notes ?? [];
