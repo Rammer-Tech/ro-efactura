@@ -6,8 +6,9 @@ namespace RoEFactura.Generation;
 /// <see cref="BillingReference"/> to the original invoice.
 /// </summary>
 /// <remarks>
-/// v1 limits: currency RON only; VAT categories Standard (S), Exempt (E) and NotSubject (O); no
-/// document-level allowances or charges, no prepaid or rounding amount.
+/// Currency: RON, or any ISO 4217 currency with <see cref="VatCurrencyRate"/>; the VAT is then also written in RON.
+/// v1 limits: VAT categories Standard (S), Exempt (E) and NotSubject (O); no document-level allowances or charges,
+/// no prepaid or rounding amount.
 /// </remarks>
 public sealed record EInvoiceDocument
 {
@@ -32,8 +33,14 @@ public sealed record EInvoiceDocument
     /// </summary>
     public DateOnly? DueDate { get; init; }
 
-    /// <summary>Invoice currency (BT-5). Only <c>RON</c> is supported in v1.</summary>
+    /// <summary>Invoice currency (BT-5), an ISO 4217 alpha-3 code. Default <c>RON</c>.</summary>
     public string CurrencyCode { get; init; } = "RON";
+
+    /// <summary>
+    /// RON per one unit of <see cref="CurrencyCode"/> (the BNR rate of the issue date). Required when the currency is not
+    /// RON (BR-RO-030): the VAT total is converted with it into the VAT accounting currency RON (BT-6, BT-111). Ignored for RON.
+    /// </summary>
+    public decimal? VatCurrencyRate { get; init; }
 
     /// <summary>Invoice notes (BT-22): at most 20 (BR-RO-A020), each at most 300 characters (BR-RO-L302).</summary>
     public IReadOnlyList<string> Notes { get; init; } = [];

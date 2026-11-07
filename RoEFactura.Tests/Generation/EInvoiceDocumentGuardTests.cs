@@ -68,11 +68,38 @@ public class EInvoiceDocumentGuardTests
     }
 
     [Fact]
-    public void Generate_NonRonCurrency_ThrowsArgumentException()
+    public void Generate_ForeignCurrencyWithoutRate_ThrowsArgumentException()
     {
-        EInvoiceDocument document = ValidDocument() with { CurrencyCode = "EUR" };
+        EInvoiceDocument document = ValidDocument() with { CurrencyCode = "EUR", VatCurrencyRate = null };
 
-        AssertRejected(document, "[decision-4]");
+        AssertRejected(document, "[BR-RO-030]");
+    }
+
+    [Fact]
+    public void Generate_ForeignCurrencyWithNonPositiveRate_ThrowsArgumentException()
+    {
+        EInvoiceDocument document = ValidDocument() with { CurrencyCode = "EUR", VatCurrencyRate = 0m };
+
+        AssertRejected(document, "[BR-RO-030]");
+    }
+
+    [Theory]
+    [InlineData("EURO")]
+    [InlineData("E1R")]
+    [InlineData("")]
+    public void Generate_CurrencyNotIso4217Alpha3_ThrowsArgumentException(string currency)
+    {
+        EInvoiceDocument document = ValidDocument() with { CurrencyCode = currency, VatCurrencyRate = 5m };
+
+        AssertRejected(document, "[BR-CL-04]");
+    }
+
+    [Fact]
+    public void Generate_LowerCaseForeignCurrency_IsNormalizedAndAccepted()
+    {
+        EInvoiceDocument document = ValidDocument() with { CurrencyCode = " eur ", VatCurrencyRate = 5m };
+
+        EInvoiceDocumentGuard.Validate(document);
     }
 
     [Fact]

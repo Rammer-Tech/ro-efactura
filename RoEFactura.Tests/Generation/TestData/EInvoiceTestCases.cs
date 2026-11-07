@@ -43,7 +43,8 @@ public static class EInvoiceTestCases
         nameof(ForeignBuyer),
         nameof(NonVatPayerSeller),
         nameof(MixedRates),
-        nameof(Storno)
+        nameof(Storno),
+        nameof(ForeignCurrencyEur)
     ];
 
     /// <summary>xunit member data: one serializable row (the case name) per case.</summary>
@@ -61,6 +62,7 @@ public static class EInvoiceTestCases
             nameof(NonVatPayerSeller) => NonVatPayerSeller(),
             nameof(MixedRates) => MixedRates(),
             nameof(Storno) => Storno(),
+            nameof(ForeignCurrencyEur) => ForeignCurrencyEur(),
             _ => throw new ArgumentOutOfRangeException(nameof(name), name, "Unknown E8 test case.")
         };
     }
@@ -97,6 +99,12 @@ public static class EInvoiceTestCases
                 }
             ]
         };
+    }
+
+    /// <summary>(h) The B2BRoVatPayerBuyer invoice in EUR: BT-5 EUR, BT-6 RON, BT-111 = the VAT converted at 4.9746 RON per EUR.</summary>
+    public static EInvoiceDocument ForeignCurrencyEur()
+    {
+        return B2BRoVatPayerBuyer() with { CurrencyCode = "EUR", VatCurrencyRate = 4.9746m };
     }
 
     /// <summary>(a) B2B to a Romanian company that is not a VAT payer: BT-47 only, Ilfov county.</summary>
