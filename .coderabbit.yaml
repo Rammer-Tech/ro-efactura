@@ -1,0 +1,9 @@
+# CodeRabbit configuration — https://docs.coderabbit.ai/getting-started/yaml-configuration
+#
+# Review is manual only (cost control): comment `@coderabbitai review` on a PR to request one,
+# `@coderabbitai full review` for a full pass after many pushes.
+
+reviews:
+  auto_review:
+    enabled: false
+    auto_incremental_review: false
